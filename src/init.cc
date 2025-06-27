@@ -296,10 +296,10 @@ static ncclResult_t dmaBufSupported(struct ncclComm* comm) {
   CUdevice dev;
   int cudaDriverVersion;
   CUDACHECK(cudaDriverGetVersion(&cudaDriverVersion));
-  if (CUPFN(cuDeviceGet) == NULL || cudaDriverVersion < 11070) return ncclInternalError;
+  if (cudaDriverVersion < 11070) return ncclInternalError;
   CUCHECK(cuDeviceGet(&dev, comm->cudaDev));
   // Query device to see if DMA-BUF support is available
-  (void) CUPFN(cuDeviceGetAttribute(&flag, CU_DEVICE_ATTRIBUTE_DMA_BUF_SUPPORTED, dev));
+  (void) cuDeviceGetAttribute(&flag, CU_DEVICE_ATTRIBUTE_DMA_BUF_SUPPORTED, dev);
   if (flag == 0) return ncclInternalError;
   INFO(NCCL_INIT, "DMA-BUF is available on GPU device %d", comm->cudaDev);
   return ncclSuccess;
@@ -353,19 +353,25 @@ static ncclResult_t commAlloc(struct ncclComm* comm, struct ncclComm* parent, in
   }
   // Try to create a CUDA object right away. If there is something wrong with
   // the device we're on (failure cause #1) , better know it early.
-  CUDACHECK(cudaGetDevice(&comm->cudaDev));
+  // CUDACHECK(cudaGetDevice(&comm->cudaDev));
 
-  NCCLCHECK(ncclCudaContextTrack(&comm->context));
+  // NCCLCHECK(ncclCudaContextTrack(&comm->context));
 
-  NCCLCHECK(getBusId(comm->cudaDev, &comm->busId));
-  nvmlDevice_t nvmlDev;
-  char busId[NVML_DEVICE_PCI_BUS_ID_BUFFER_SIZE];
-  NCCLCHECK(int64ToBusId(comm->busId, busId));
-  NCCLCHECK(ncclNvmlDeviceGetHandleByPciBusId(busId, &nvmlDev));
-  NCCLCHECK(ncclNvmlDeviceGetIndex(nvmlDev, (unsigned int*)&comm->nvmlDev));
+  // NCCLCHECK(getBusId(comm->cudaDev, &comm->busId));
+  // nvmlDevice_t nvmlDev;
+  // char busId[NVML_DEVICE_PCI_BUS_ID_BUFFER_SIZE];
+  // NCCLCHECK(int64ToBusId(comm->busId, busId));
+  // INFO(NCCL_INIT, "After int64ToBusId in commAlloc: busId %s", busId);
+  // NCCLCHECK(ncclNvmlDeviceGetHandleByPciBusId(busId, &nvmlDev));
+  // NCCLCHECK(ncclNvmlDeviceGetIndex(nvmlDev, (unsigned int*)&comm->nvmlDev));
 
-  comm->compCap = ncclCudaCompCap();
-  TRACE(NCCL_INIT,"comm %p rank %d nranks %d cudaDev %d busId %lx compCap %d", comm, rank, ndev, comm->cudaDev, comm->busId, comm->compCap);
+  // comm->compCap = ncclCudaCompCap();
+  // TRACE(NCCL_INIT,"comm %p rank %d nranks %d cudaDev %d busId %lx compCap %d", comm, rank, ndev, comm->cudaDev, comm->busId, comm->compCap);
+
+  static const int gpuBusIds[4] = { 0x13000, 0x19000, 0x48000, 0x4d000 };
+  comm->cudaDev = rank;
+  comm->busId = gpuBusIds[rank]; // This is a hack to avoid calling cudaGetDevice() and nvmlDeviceGetHandleByPciBusId() in the init path.
+  comm->compCap = -1; // Will be set from Xml
 
   comm->checkPointers = ncclParamCheckPointers() == 1 ? true : false;
   comm->dmaBufSupport = (dmaBufSupported(comm) == ncclSuccess) ? true : false;
@@ -1777,7 +1783,7 @@ static ncclResult_t ncclCommInitRankDev(ncclComm_t* newcomm, int nranks, int nId
     pthread_once(&once, showVersion);
   }
   // Make sure the CUDA runtime is initialized.
-  CUDACHECKGOTO(cudaFree(NULL), res, fail);
+  // CUDACHECKGOTO(cudaFree(NULL), res, fail);
 
   NCCLCHECKGOTO(PtrCheck(newcomm, "CommInitRank", "newcomm"), res, fail);
   NCCLCHECKGOTO(PtrCheck(config, "CommInitRank", "config"), res, fail);
@@ -1871,6 +1877,7 @@ ncclResult_t ncclCommInitAll(ncclComm_t* comms, int ndev, const int* devlist) {
   (void)ncclCudaLibraryInit();
 
   CUDACHECK(cudaGetDevice(&oldDev));
+  INFO(NCCL_INIT, "cudaGetDevice %d", oldDev);
   NCCLCHECKGOTO(PtrCheck(comms, "CommInitAll", "comms"), ret, fail);
   if (ndev < 0) {
     WARN("Invalid device count requested : %d", ndev);
@@ -1879,6 +1886,7 @@ ncclResult_t ncclCommInitAll(ncclComm_t* comms, int ndev, const int* devlist) {
   }
 
   CUDACHECKGOTO(cudaGetDeviceCount(&totalnDev), ret, fail);
+  INFO(NCCL_INIT, "cudaGetDeviceCount %d", totalnDev);
   if (devlist) {
     NCCLCHECKGOTO(ncclCalloc(&gpuFlags, totalnDev), ret, fail);
     for (int i = 0; i < ndev; ++i) {

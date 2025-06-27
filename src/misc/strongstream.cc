@@ -33,7 +33,9 @@ static pthread_mutex_t cxtListLock = PTHREAD_MUTEX_INITIALIZER;
 ncclResult_t ncclCudaContextTrack(struct ncclCudaContext** out) {
   ncclResult_t result = ncclSuccess;
   CUcontext hcontext;
+  INFO(NCCL_INIT, "ncclCudaContextTrack: tracking CUDA context");
   CUCHECK(cuCtxGetCurrent(&hcontext));
+  INFO(NCCL_INIT, "ncclCudaContextTrack: current CUDA context %p", hcontext);
 
   pthread_mutex_lock(&cxtListLock);
   struct ncclCudaContext* p = cxtListHead;
@@ -43,6 +45,7 @@ ncclResult_t ncclCudaContextTrack(struct ncclCudaContext** out) {
       p->refCount = 1;
       p->hcontext = hcontext;
       p->next = cxtListHead;
+      INFO(NCCL_INIT, "ncclCudaContextTrack: created new context %p(refC=%d, hcontext=%p, next=%p)", p, p->refCount, p->hcontext, p->next);
       cxtListHead = p;
       NCCLCHECKGOTO(ncclStrongStreamConstruct(&p->launchOrder), result, leave);
       break;
@@ -60,6 +63,10 @@ leave:
 }
 
 void ncclCudaContextDrop(struct ncclCudaContext* cxt) {
+  if (cxt == nullptr) {
+    WARN("ncclCudaContextDrop: called with null context");
+    return;
+  }
   pthread_mutex_lock(&cxtListLock);
   if (0 == --cxt->refCount) {
     struct ncclCudaContext** pp = &cxtListHead;
@@ -80,6 +87,7 @@ ncclResult_t ncclCudaGetCapturingGraph(
   #if CUDART_VERSION >= 10000 // cudaStreamGetCaptureInfo
     int driver;
     NCCLCHECK(ncclCudaDriverVersion(&driver));
+    INFO(NCCL_INIT, "ncclCudaGetCapturingGraph: CUDA driver version %d", driver);
     if (CUDART_VERSION < 11030 || driver < 11030) {
       cudaStreamCaptureStatus status;
       CUDACHECK(cudaStreamGetCaptureInfo(stream, &status, nullptr));

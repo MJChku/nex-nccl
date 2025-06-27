@@ -11,6 +11,8 @@
 #include "bootstrap.h"
 #include "channel.h"
 #include "cudawrap.h"
+#include "include/debug.h"
+#include "include/nccl_common.h"
 #include "profiler.h"
 #include "transport.h"
 #include "register_inline.h"
@@ -742,6 +744,7 @@ static ncclResult_t scheduleCollTasksToPlan(
     if (!plan->kernelSpecialized) {
       plan->kernelFn = ncclDevKernelForFunc[task->devFuncId];
       plan->kernelSpecialized = ncclDevKernelForFuncIsSpecialized[task->devFuncId];
+      INFO(NCCL_TUNING, "Kernel %p, specialized %d, devFuncId=%d", plan->kernelFn, plan->kernelSpecialized, task->devFuncId);
     }
 
     if (comm->rank == 0) {
@@ -1034,6 +1037,7 @@ static ncclResult_t scheduleP2pTasksToPlan(
   plan->threadPerBlock = std::max(plan->threadPerBlock, NCCL_MAX_NTHREADS);
   if (!plan->kernelSpecialized) {
     plan->kernelFn = ncclDevKernelForFunc[ncclDevFuncId_P2p()];
+    INFO(NCCL_INIT, "Using specialized kernel for P2P %p", plan->kernelFn);
     plan->kernelSpecialized = ncclDevKernelForFuncIsSpecialized[ncclDevFuncId_P2p()];
   }
 
@@ -1415,6 +1419,7 @@ ncclResult_t ncclLaunchPrepare(struct ncclComm* comm) {
         struct ncclTaskColl* task = ncclIntruQueueHead(&planner->collTaskQueue);
         plan->isSymColl = true;
         plan->kernelFn = ncclSymGetKernelPtr((ncclSymKernelId)task->devFuncId, task->opDev.op, task->datatype);
+        INFO(NCCL_TUNING, "ncclSymGetKernelPtr: devFuncId %d, op %d, datatype %d -> kernel %p", task->devFuncId, task->opDev.op, task->datatype, plan->kernelFn);
         plan->threadPerBlock = task->nWarps*WARP_SIZE;
         plan->channelMask = uint64_t(-1) >> (64-task->nMaxChannels);
 
@@ -1553,9 +1558,12 @@ ncclResult_t ncclLaunchKernel(struct ncclComm* comm, struct ncclKernelPlan* plan
 
   int driverVersion;
   NCCLCHECKGOTO(ncclCudaDriverVersion(&driverVersion), ret, do_return);
+  INFO(NCCL_TUNING, "In ncclLaunchKernel, driverVersion %d, CUDART_VERSION %d", driverVersion, CUDART_VERSION);
 
   CUfunction fn;
   CUDACHECKGOTO(cudaGetFuncBySymbol(&fn, sym), ret, do_return);
+  INFO(NCCL_TUNING, "Launching kernel %p (sym %p) with grid %dx%d block %dx%d smem %d stream %p",
+       fn, sym, grid.x, grid.y, block.x, block.y, smem, launchStream);
 
   if (CUDART_VERSION >= 11080 && driverVersion >= 11080) {
   #if CUDART_VERSION >= 11080
@@ -1623,7 +1631,10 @@ ncclResult_t ncclLaunchKernel(struct ncclComm* comm, struct ncclKernelPlan* plan
     launchConfig.attrs = launchAttrs;
     launchConfig.numAttrs = attrs;
     launchConfig.hStream = launchStream;
+    INFO(NCCL_TUNING, "Launching kernel %p, launchConfig grid %dx%d block %dx%d smem %d stream %p, extra[0] %p, extra[1] %p",
+         fn, launchConfig.gridDimX, launchConfig.gridDimY, launchConfig.blockDimX, launchConfig.blockDimY, launchConfig.sharedMemBytes, launchStream, extra[0], extra[1]);
     CUCHECKGOTO(cuLaunchKernelEx(&launchConfig, fn, nullptr, extra), ret, do_return);
+    INFO(NCCL_TUNING, "After cuLaunchKernelEx");
   #endif
   } else {
     // Standard kernel launch

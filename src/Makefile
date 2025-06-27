@@ -37,7 +37,7 @@ OBJDIR := $(BUILDDIR)/obj
 PKGDIR := $(BUILDDIR)/lib/pkgconfig
 BINDIR := $(BUILDDIR)/bin
 ##### target files
-CUDARTLIB  ?= cudart_static
+CUDARTLIB  ?= cudart
 
 # Use compatibility shim only with static cudart; see https://github.com/NVIDIA/nccl/issues/658
 ifeq ($(CUDARTLIB), cudart_static)
@@ -52,7 +52,7 @@ PKGTARGET  := $(PKGCONFIGFILE)
 LIBOBJ     := $(LIBSRCFILES:%.cc=$(OBJDIR)/%.o)
 BINOBJ     := $(BINSRCFILES:%.cc=$(OBJDIR)/%.o)
 DEPFILES   := $(LIBOBJ:%.o=%.d) $(BINOBJ:%.o=%.d)
-LDFLAGS    += -L${CUDA_LIB} -l$(CUDARTLIB) -lpthread -lrt -ldl
+LDFLAGS    += -L${CUDA_LIB} -l$(CUDARTLIB) -lcuda -lpthread -lrt -ldl
 INCPLUGIN  := include/plugin
 
 DEVMANIFEST := $(BUILDDIR)/obj/device/manifest

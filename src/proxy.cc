@@ -867,23 +867,20 @@ static int setProxyThreadContext(struct ncclProxyState* proxyState) {
   if (createThreadContext == -1) {
     createThreadContext = ncclParamCreateThreadContext();
     if (createThreadContext) {
-      if (CUPFN(cuCtxCreate) == nullptr || CUPFN(cuCtxDestroy) == nullptr || CUPFN(cuCtxSetCurrent) == nullptr) {
-        WARN("Unable to create thread context due to old driver, disabling.");
-        createThreadContext = 0;
-        goto exit;
-      }
+      // Note: Functions are always available with external declarations
+      // No need to check for nullptr
     }
   }
   if (createThreadContext) {
     if (proxyState->cudaCtx == NULL) {
-      if (CUPFN(cuCtxCreate(&proxyState->cudaCtx,
-                            NULL, 0, CU_CTX_SCHED_SPIN|CU_CTX_MAP_HOST, proxyState->cudaDev)) != CUDA_SUCCESS) {
+      if (cuCtxCreate(&proxyState->cudaCtx, 
+                     CU_CTX_SCHED_SPIN|CU_CTX_MAP_HOST, proxyState->cudaDev) != CUDA_SUCCESS) {
         WARN("Failed to create CUDA context on device %d", proxyState->cudaDev);
         createThreadContext = 0;
         goto exit;
       }
     } else {
-      if (CUPFN(cuCtxSetCurrent(proxyState->cudaCtx)) != CUDA_SUCCESS) {
+      if (cuCtxSetCurrent(proxyState->cudaCtx) != CUDA_SUCCESS) {
         WARN("Failed to set CUDA context on device %d", proxyState->cudaDev);
         goto exit;
       }
