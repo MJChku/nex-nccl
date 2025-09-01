@@ -406,6 +406,7 @@ ncclResult_t ncclStrongStreamSynchronize(struct ncclStrongStream* ss) {
   #if CUDART_VERSION >= 11030
     CUDACHECK(cudaStreamWaitEvent(ss->liveStream, ss->serialEvent, 0));
   #endif
+  INFO(NCCL_INIT, "ncclStrongStreamSynchronize: synchronizing live stream %p", ss->liveStream);
   CUDACHECK(cudaStreamSynchronize(ss->liveStream));
   return ncclSuccess;
 }

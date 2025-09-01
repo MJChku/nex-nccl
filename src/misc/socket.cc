@@ -14,6 +14,8 @@
 #include "param.h"
 #include <time.h>
 
+#include "mock_syscalls.h"
+
 NCCL_PARAM(RetryCnt, "SOCKET_RETRY_CNT", 34);
 NCCL_PARAM(RetryTimeOut, "SOCKET_RETRY_SLEEP_MSEC", 100);
 static void msleep(unsigned int time_msec) {
@@ -37,7 +39,9 @@ static ncclResult_t socketProgressOpt(int op, struct ncclSocket* sock, void* ptr
       *closed = 1;
       return ncclSuccess;
     }
+
     if (bytes == -1) {
+      // INFO(NCCL_NET, "socketProgressOpt: errno %d", errno);
       if ((op == NCCL_SOCKET_SEND && errno == EPIPE) || (op == NCCL_SOCKET_RECV && errno == ECONNRESET)) {
         *closed = 1;
         return ncclSuccess;
@@ -49,7 +53,12 @@ static ncclResult_t socketProgressOpt(int op, struct ncclSocket* sock, void* ptr
       } else {
         bytes = 0;
       }
+    }else{
+      INFO(NCCL_NET, "socketProgressOpt: %s %s (fd=%d) %d bytes at offset %d, 4bytes value %d",
+        (op == NCCL_SOCKET_RECV ? "recv from" : "send to"), 
+        ncclSocketToString(&sock->addr, line), sock->fd, bytes, *offset, *(int*)(data + *offset));
     }
+
     (*offset) += bytes;
     if (sock->abortFlag && __atomic_load_n(sock->abortFlag, __ATOMIC_ACQUIRE)) {
       INFO(NCCL_NET, "socketProgressOpt: abort called");
@@ -69,7 +78,7 @@ static ncclResult_t socketProgress(int op, struct ncclSocket* sock, void* ptr, i
     } else {
       char line[SOCKET_NAME_MAXLEN+1];
       WARN("socketProgress: Connection closed by remote peer %s",
-           ncclSocketToString(&sock->addr, line, /*numericHostForm*/0));
+           ncclSocketToString(&sock->addr, line));
       return ncclRemoteError;
     }
   }
@@ -148,8 +157,8 @@ static ncclResult_t findInterfaces(const char* prefixList, char* names, union nc
     int family = interface->ifa_addr->sa_family;
     if (family != AF_INET && family != AF_INET6)
       continue;
-
-    TRACE(NCCL_INIT|NCCL_NET,"Found interface %s:%s", interface->ifa_name, ncclSocketToString((union ncclSocketAddress *) interface->ifa_addr, line));
+    char line[SOCKET_NAME_MAXLEN+1];
+    INFO(NCCL_INIT|NCCL_NET,"Checking interface %s:%s", interface->ifa_name, ncclSocketToString((union ncclSocketAddress *) interface->ifa_addr, line));
 
     /* Allow the caller to force the socket family type */
     if (sock_family != -1 && family != sock_family)
@@ -180,6 +189,7 @@ static ncclResult_t findInterfaces(const char* prefixList, char* names, union nc
       int salen = (family == AF_INET) ? sizeof(struct sockaddr_in) : sizeof(struct sockaddr_in6);
       memset(addrs + *found, '\0', sizeof(*addrs));
       memcpy(addrs + *found, interface->ifa_addr, salen);
+      INFO(NCCL_INIT|NCCL_NET,"Found interface %s:%s", interface->ifa_name, ncclSocketToString((union ncclSocketAddress *) interface->ifa_addr, line));
       (*found)++;
     }
   }
@@ -260,7 +270,9 @@ ncclResult_t ncclFindInterfaceMatchSubnet(char* ifName, union ncclSocketAddress*
     // Store the interface name
     strncpy(ifName, interface->ifa_name, ifNameMaxSize);
 
-    TRACE(NCCL_INIT|NCCL_NET,"NET : Found interface %s:%s in the same subnet as remote address %s",
+    char line[SOCKET_NAME_MAXLEN+1];
+    char line_a[SOCKET_NAME_MAXLEN+1];
+    INFO(NCCL_INIT|NCCL_NET,"NET : Found interface %s:%s in the same subnet as remote address %s",
           interface->ifa_name, ncclSocketToString(localAddr, line), ncclSocketToString(remoteAddr, line_a));
     *found = 1;
   }
@@ -387,6 +399,7 @@ ncclResult_t ncclFindInterfaces(char* ifNames, union ncclSocketAddress *ifAddrs,
 }
 
 ncclResult_t ncclSocketListen(struct ncclSocket* sock) {
+  char line[SOCKET_NAME_MAXLEN+1];
   if (sock == NULL) {
     WARN("ncclSocketListen: pass NULL socket");
     return ncclInvalidArgument;
@@ -395,6 +408,9 @@ ncclResult_t ncclSocketListen(struct ncclSocket* sock) {
     WARN("ncclSocketListen: file descriptor is -1");
     return ncclInvalidArgument;
   }
+
+  INFO(NCCL_INIT|NCCL_NET, "ncclSocketListen: Starting to listen on socket %s (fd=%d)", 
+       ncclSocketToString(&sock->addr, line), sock->fd);
 
   if (socketToPort(&sock->addr)) {
     // Port is forced by env. Make sure we get the port.
@@ -414,7 +430,7 @@ ncclResult_t ncclSocketListen(struct ncclSocket* sock) {
 
 #ifdef ENABLE_TRACE
   char line[SOCKET_NAME_MAXLEN+1];
-  TRACE(NCCL_INIT|NCCL_NET,"Listening on socket %s", ncclSocketToString(&sock->addr, line));
+  INFO(NCCL_INIT|NCCL_NET,"Listening on socket %s", ncclSocketToString(&sock->addr, line));
 #endif
 
   /* Put the socket in listen mode
@@ -514,6 +530,8 @@ static ncclResult_t socketFinalizeAccept(struct ncclSocket* sock) {
       }
       memcpy(&magic, sock->finalizeBuffer, sizeof(magic));
     }
+    INFO(NCCL_NET|NCCL_INIT, "socketFinalizeAccept from %s: received magic %lx, expected %lx",
+         ncclSocketToString(&sock->addr, line), (unsigned long)magic, (unsigned long)sock->magic);
     if (magic != sock->magic) {
       socketResetAccept(sock);
       return ncclSuccess;
@@ -675,6 +693,8 @@ static ncclResult_t socketProgressState(struct ncclSocket* sock) {
 }
 
 ncclResult_t ncclSocketReady(struct ncclSocket* sock, int *running) {
+
+  INFO(NCCL_INIT|NCCL_NET, "ncclSocketReady: checking socket %p", sock);
   if (sock == NULL) {
     *running = 0;
     return ncclSuccess;
@@ -695,6 +715,7 @@ ncclResult_t ncclSocketConnect(struct ncclSocket* sock) {
 #ifdef ENABLE_TRACE
   char line[SOCKET_NAME_MAXLEN+1];
 #endif
+  char line[SOCKET_NAME_MAXLEN+1];
 
   if (sock == NULL) {
     WARN("ncclSocketConnect: pass NULL socket");
@@ -710,7 +731,8 @@ ncclResult_t ncclSocketConnect(struct ncclSocket* sock) {
     if (sock->state == ncclSocketStateError) return ncclRemoteError;
     return ncclInternalError;
   }
-  TRACE(NCCL_INIT|NCCL_NET,"Connecting to socket %s", ncclSocketToString(&sock->addr, line));
+  INFO(NCCL_INIT|NCCL_NET,"ncclSocketConnect: Connecting to socket %s (fd=%d)", 
+       ncclSocketToString(&sock->addr, line), sock->fd);
 
   sock->state = ncclSocketStateConnecting;
   sock->finalizeCounter = 0;
@@ -740,6 +762,7 @@ ncclResult_t ncclSocketConnect(struct ncclSocket* sock) {
 
 ncclResult_t ncclSocketAccept(struct ncclSocket* sock, struct ncclSocket* listenSock) {
   ncclResult_t ret = ncclSuccess;
+  char line[SOCKET_NAME_MAXLEN+1];
 
   if (listenSock == NULL || sock == NULL) {
     WARN("ncclSocketAccept: pass NULL socket");
@@ -754,6 +777,9 @@ ncclResult_t ncclSocketAccept(struct ncclSocket* sock, struct ncclSocket* listen
       ret = ncclInternalError;
     goto exit;
   }
+
+  INFO(NCCL_INIT|NCCL_NET, "ncclSocketAccept: Accepting connection on listen socket %s (fd=%d)", 
+       ncclSocketToString(&listenSock->addr, line), listenSock->fd);
 
   if (sock->acceptFd == -1) {
     memcpy(sock, listenSock, sizeof(struct ncclSocket));
@@ -775,6 +801,8 @@ ncclResult_t ncclSocketAccept(struct ncclSocket* sock, struct ncclSocket* listen
     case ncclSocketStateAccepting:
     case ncclSocketStateAccepted:
     case ncclSocketStateReady:
+      INFO(NCCL_INIT|NCCL_NET, "ncclSocketAccept: Successfully accepted connection from %s (fd=%d)", 
+           ncclSocketToString(&sock->addr, line), sock->fd);
       ret = ncclSuccess;
       break;
     case ncclSocketStateError:
@@ -852,6 +880,7 @@ ncclResult_t ncclSocketWait(int op, struct ncclSocket* sock, void* ptr, int size
 
 ncclResult_t ncclSocketSend(struct ncclSocket* sock, void* ptr, int size) {
   int offset = 0;
+  char line[SOCKET_NAME_MAXLEN+1];
   if (sock == NULL) {
     WARN("ncclSocketSend: pass NULL socket");
     return ncclInvalidArgument;
@@ -860,12 +889,15 @@ ncclResult_t ncclSocketSend(struct ncclSocket* sock, void* ptr, int size) {
     WARN("ncclSocketSend: socket state (%d) is not ready", sock->state);
     return ncclInternalError;
   }
+  INFO(NCCL_NET, "ncclSocketSend: Sending %d bytes to (fd=%d) (4bytes value %d)", 
+       size, sock->fd, *(int*)ptr);
   NCCLCHECK(socketWait(NCCL_SOCKET_SEND, sock, ptr, size, &offset));
   return ncclSuccess;
 }
 
 ncclResult_t ncclSocketRecv(struct ncclSocket* sock, void* ptr, int size) {
   int offset = 0;
+  char line[SOCKET_NAME_MAXLEN+1];
   if (sock == NULL) {
     WARN("ncclSocketRecv: pass NULL socket");
     return ncclInvalidArgument;
@@ -874,12 +906,17 @@ ncclResult_t ncclSocketRecv(struct ncclSocket* sock, void* ptr, int size) {
     WARN("ncclSocketRecv: socket state (%d) is not ready", sock->state);
     return ncclInternalError;
   }
+
   NCCLCHECK(socketWait(NCCL_SOCKET_RECV, sock, ptr, size, &offset));
+
+  INFO(NCCL_NET, "ncclSocketRecv: Receiving %d bytes (fd=%d) (4bytes value %d)", 
+       size, sock->fd, *(int*)ptr);
   return ncclSuccess;
 }
 
 ncclResult_t ncclSocketSendRecv(struct ncclSocket* sendSock, void* sendPtr, int sendSize, struct ncclSocket* recvSock, void* recvPtr, int recvSize) {
   int sendOffset = 0, recvOffset = 0;
+  char sendLine[SOCKET_NAME_MAXLEN+1], recvLine[SOCKET_NAME_MAXLEN+1];
   if (sendSock == NULL || recvSock == NULL) {
     WARN("ncclSocketSendRecv: invalid socket %p/%p", sendSock, recvSock);
     return ncclInternalError;
@@ -889,6 +926,9 @@ ncclResult_t ncclSocketSendRecv(struct ncclSocket* sendSock, void* sendPtr, int 
     WARN("ncclSocketSendRecv: socket state (%d/%d) is not ready", sendSock->state, recvSock->state);
     return ncclInternalError;
   }
+  INFO(NCCL_NET, "ncclSocketSendRecv: Sending %d bytes to %s (fd=%d), receiving %d bytes from %s (fd=%d)", 
+       sendSize, ncclSocketToString(&sendSock->addr, sendLine), sendSock->fd,
+       recvSize, ncclSocketToString(&recvSock->addr, recvLine), recvSock->fd);
   while (sendOffset < sendSize || recvOffset < recvSize) {
     if (sendOffset < sendSize) NCCLCHECK(socketProgress(NCCL_SOCKET_SEND, sendSock, sendPtr, sendSize, &sendOffset));
     if (recvOffset < recvSize) NCCLCHECK(socketProgress(NCCL_SOCKET_RECV, recvSock, recvPtr, recvSize, &recvOffset));
@@ -900,10 +940,13 @@ ncclResult_t ncclSocketSendRecv(struct ncclSocket* sendSock, void* sendPtr, int 
 // Receive or detect connection closed
 ncclResult_t ncclSocketTryRecv(struct ncclSocket* sock, void* ptr, int size, int* closed, bool blocking) {
   int offset = 0;
+  char line[SOCKET_NAME_MAXLEN+1];
   if (sock == NULL) {
     WARN("ncclSocketTryRecv: pass NULL socket");
     return ncclInvalidArgument;
   }
+  INFO(NCCL_NET, "ncclSocketTryRecv: Trying to receive %d bytes from socket %s (fd=%d), blocking=%s", 
+       size, ncclSocketToString(&sock->addr, line), sock->fd, blocking ? "true" : "false");
   *closed = 0;
   // Block until connection closes or nbytes received
   if (blocking) {
@@ -941,8 +984,11 @@ ncclResult_t ncclSocketShutdown(struct ncclSocket* sock, int how) {
 }
 
 ncclResult_t ncclSocketClose(struct ncclSocket* sock, bool wait) {
+  char line[SOCKET_NAME_MAXLEN+1];
   if (sock != NULL) {
     if (sock->state > ncclSocketStateNone && sock->state < ncclSocketStateNum && sock->fd >= 0) {
+      INFO(NCCL_NET, "ncclSocketClose: Closing socket %s (fd=%d), wait=%s", 
+           ncclSocketToString(&sock->addr, line), sock->fd, wait ? "true" : "false");
       if (wait) {
         char data;
         int closed = 0;

@@ -17,6 +17,7 @@
 #include "transport.h"
 #include "register_inline.h"
 
+#include <cstdint>
 #include <cstring> // std::memcpy
 #include <cinttypes> // PRIx64
 #include <cassert>
@@ -58,7 +59,7 @@ ncclResult_t ncclInitKernelsForDevice(int cudaArch, int maxSharedMem, size_t* ma
         if (sharedMemSize > (maxSharedMem-attr.sharedSizeBytes)) {
           WARN("cudaArch %d ncclMaxSharedMem %d exceeds device/fn maxSharedMem %zu",
                cudaArch, sharedMemSize, maxSharedMem-attr.sharedSizeBytes);
-          return ncclSystemError;
+          // return ncclSystemError;
         }
         CUDACHECKGOTO(cudaFuncSetAttribute(fn,
           cudaFuncAttributeMaxDynamicSharedMemorySize, sharedMemSize),
@@ -139,6 +140,8 @@ static void addWorkBatchToPlan(
     batch = &batchNode->batch;
     batch->nextExtends = 0;
     batch->workType = (uint32_t)workType;
+    INFO(NCCL_INIT, "addWorkBatchToPlan: channelId %d,devFuncId %d, batch ptr %p",
+         channelId, devFuncId, batch);
     batch->funcId = devFuncId;
     batch->offsetBase = workOffset;
     batch->offsetBitset = 0;
@@ -180,6 +183,7 @@ static void finishPlan(struct ncclComm* comm, struct ncclKernelPlan* plan) {
   plan->kernelArgsSize = alignUp(plan->kernelArgsSize, 16);
   plan->kernelArgs = (struct ncclDevKernelArgs*)ncclMemoryStackAlloc(&comm->memScoped, plan->kernelArgsSize, /*align=*/16);
   plan->kernelArgs->comm = comm->devComm;
+  INFO(NCCL_INIT, "kernelArgs %p, plan->kernelArgs->comm: comm->devComm %p\n", plan->kernelArgs, comm->devComm);
   plan->kernelArgs->channelMask = plan->channelMask;
   plan->kernelArgs->workStorageType = plan->workStorageType;
 
@@ -201,6 +205,9 @@ static void finishPlan(struct ncclComm* comm, struct ncclKernelPlan* plan) {
         }
         batchPrev[c] = &batchZero[batchIx];
         batchZero[batchIx++] = batchNode->batch;
+        INFO(NCCL_INIT, "batchZero[%d] %p, channelId %d, workType %d, funcId %d",
+             batchIx-1, &batchZero[batchIx-1], c, batchZero[batchIx-1].workType,
+             batchZero[batchIx-1].funcId);
       }
       if (ncclIntruQueueEmpty(&wipChannels[c].workBatchQueue)) {
         hasBatchMask ^= 1ull<<c;
@@ -293,6 +300,8 @@ ncclResult_t ncclTasksRegAndEnqueue(struct ncclComm* comm) {
     devWork.recvbuffRmtAddrs = task->recvbuffRmtAddrs;
     devWork.root = task->root;
     devWork.nWarps = task->nWarps;
+    INFO(NCCL_INIT, "ncclTasksRegAndEnqueue: task %p, sendbuff %p, recvbuff %p, nWarps %d",
+         task, devWork.sendbuff, devWork.recvbuff, devWork.nWarps);
     devWork.redOpArg = task->opDev.scalarArg;
     devWork.redOpArgIsPtr = task->opDev.scalarArgIsPtr;
     devWork.oneNode = (comm->nNodes == 1);
@@ -355,8 +364,10 @@ ncclResult_t ncclPrepareTasks(struct ncclComm* comm, bool* algoNeedConnect, bool
       enum ncclSymKernelId kernel;
       int nChannels, nWarps;
       float estTimeUs = 1.e18;
+
       NCCLCHECK(ncclSymPickKernel(comm, task->func, task->opDev.op, task->datatype, task->count, &estTimeUs, &kernel, &nChannels, &nWarps));
 
+      INFO(NCCL_INIT, "====!!!==== Using symmetric kernel, nwarps %d", nWarps);
       // We should only use symmetric kernel if it beats the asymmetric kernel. But the
       // perf model accuracy from asymmetric kernels is too inaccurate and reports too high
       // of a bandwidth. For now just always use symmetric if available.
@@ -679,6 +690,8 @@ static ncclResult_t scheduleCollTasksToPlan(
         NCCLCHECK(calcCollChunking(comm, task, /*nChannels=*/1, globalBytesPerElement*countMid, &chunkSize, &directFlags, &proxyOpMid));
         devWork->cbd.chunkGrainsMid = chunkSize/grainSize;
       }
+
+      INFO(NCCL_NET, "chunk size %ld", chunkSize);
       devWork->direct = directFlags;
 
       // Update the current channel and vacant traffic budget.
@@ -742,8 +755,10 @@ static ncclResult_t scheduleCollTasksToPlan(
     plan->channelMask |= (2ull<<devWork->channelHi) - (1ull<<devWork->channelLo);
     plan->threadPerBlock = std::max(plan->threadPerBlock, task->nWarps*WARP_SIZE);
     if (!plan->kernelSpecialized) {
-      plan->kernelFn = ncclDevKernelForFunc[task->devFuncId];
-      plan->kernelSpecialized = ncclDevKernelForFuncIsSpecialized[task->devFuncId];
+      // plan->kernelFn = ncclDevKernelForFunc[task->devFuncId];
+      plan->kernelFn = (void*) (0ULL + task->devFuncId);
+      // plan->kernelSpecialized = ncclDevKernelForFuncIsSpecialized[task->devFuncId];
+      plan->kernelSpecialized = (void*) ((1ULL << 32) + task->devFuncId);
       INFO(NCCL_TUNING, "Kernel %p, specialized %d, devFuncId=%d", plan->kernelFn, plan->kernelSpecialized, task->devFuncId);
     }
 
@@ -753,14 +768,14 @@ static ncclResult_t scheduleCollTasksToPlan(
         ncclProtoToString(task->protocol), devWork->channelLo, devWork->channelHi);
 
       if (task->isCollnet) {
-        TRACE(NCCL_COLL, "Collective %s(%s, %s, %s, %s) count=%ld devFuncId=%d channel{Lo..Hi}={%d..%d} count=%ld chunkCount=%d",
+        INFO(NCCL_COLL, "Collective %s(%s, %s, %s, %s) count=%ld devFuncId=%d channel{Lo..Hi}={%d..%d} count=%ld chunkCount=%d",
           ncclFuncToString(task->func), ncclDevRedOpToString(task->opDev.op),
           ncclDatatypeToString(task->datatype), ncclAlgoToString(task->algorithm),
           ncclProtoToString(task->protocol),
           (long)task->count, task->devFuncId, devWork->channelLo, devWork->channelHi,
           (long)devWork->collnet.count, devWork->collnet.chunkCount);
       } else {
-        TRACE(NCCL_COLL, "Collective %s(%s, %s, %s, %s) count=%ld devFuncId=%d channel{Lo..Hi}={%d..%d} count{Lo,Mid,Hi}={%ld,%ld,%ld} chunkBytes{Lo,Mid,Hi}={%d,%d,%d}",
+        INFO(NCCL_COLL, "Collective %s(%s, %s, %s, %s) count=%ld devFuncId=%d channel{Lo..Hi}={%d..%d} count{Lo,Mid,Hi}={%ld,%ld,%ld} chunkBytes{Lo,Mid,Hi}={%d,%d,%d}",
           ncclFuncToString(task->func), ncclDevRedOpToString(task->opDev.op),
           ncclDatatypeToString(task->datatype), ncclAlgoToString(task->algorithm),
           ncclProtoToString(task->protocol),
@@ -1036,9 +1051,11 @@ static ncclResult_t scheduleP2pTasksToPlan(
 
   plan->threadPerBlock = std::max(plan->threadPerBlock, NCCL_MAX_NTHREADS);
   if (!plan->kernelSpecialized) {
-    plan->kernelFn = ncclDevKernelForFunc[ncclDevFuncId_P2p()];
+    // plan->kernelFn = ncclDevKernelForFunc[ncclDevFuncId_P2p()];
+    plan->kernelFn = (void*)(0ULL+ncclDevFuncId_P2p());
     INFO(NCCL_INIT, "Using specialized kernel for P2P %p", plan->kernelFn);
-    plan->kernelSpecialized = ncclDevKernelForFuncIsSpecialized[ncclDevFuncId_P2p()];
+    // plan->kernelSpecialized = ncclDevKernelForFuncIsSpecialized[ncclDevFuncId_P2p()];
+    plan->kernelSpecialized =(void*)((1ULL << 32) + ncclDevFuncId_P2p());
   }
 
   // Compute how much to split operations
@@ -1418,7 +1435,7 @@ ncclResult_t ncclLaunchPrepare(struct ncclComm* comm) {
 
         struct ncclTaskColl* task = ncclIntruQueueHead(&planner->collTaskQueue);
         plan->isSymColl = true;
-        plan->kernelFn = ncclSymGetKernelPtr((ncclSymKernelId)task->devFuncId, task->opDev.op, task->datatype);
+        plan->kernelFn = (void*) ((2ULL << 32) + (uint32_t)ncclSymGetKernelPtr((ncclSymKernelId)task->devFuncId, task->opDev.op, task->datatype));
         INFO(NCCL_TUNING, "ncclSymGetKernelPtr: devFuncId %d, op %d, datatype %d -> kernel %p", task->devFuncId, task->opDev.op, task->datatype, plan->kernelFn);
         plan->threadPerBlock = task->nWarps*WARP_SIZE;
         plan->channelMask = uint64_t(-1) >> (64-task->nMaxChannels);
@@ -1561,7 +1578,8 @@ ncclResult_t ncclLaunchKernel(struct ncclComm* comm, struct ncclKernelPlan* plan
   INFO(NCCL_TUNING, "In ncclLaunchKernel, driverVersion %d, CUDART_VERSION %d", driverVersion, CUDART_VERSION);
 
   CUfunction fn;
-  CUDACHECKGOTO(cudaGetFuncBySymbol(&fn, sym), ret, do_return);
+  // CUDACHECKGOTO(cudaGetFuncBySymbol(&fn, sym), ret, do_return);
+  fn = (CUfunction)sym;
   INFO(NCCL_TUNING, "Launching kernel %p (sym %p) with grid %dx%d block %dx%d smem %d stream %p",
        fn, sym, grid.x, grid.y, block.x, block.y, smem, launchStream);
 
@@ -1840,7 +1858,7 @@ static ncclResult_t topoGetAlgoInfo(
     return (algoEnv || protoEnv) ? ncclInvalidUsage : ncclInternalError;
   }
   if (simInfo) simInfo->estimatedTime = time;
-  TRACE(NCCL_COLL, "%ld Bytes -> Algo %d proto %d time %f", nBytes, info->algorithm, info->protocol, time);
+  INFO(NCCL_COLL, "%ld Bytes -> Algo %d proto %d time %f", nBytes, info->algorithm, info->protocol, time);
 
   int nc = comm->nChannels;
   int nt = comm->maxThreads[info->algorithm][info->protocol];

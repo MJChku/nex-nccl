@@ -137,6 +137,11 @@ def kernel_cname(k):
   else:
     return paste("_", "ncclSymDevKernel", k.coll, k.algo)
 
+def kernel_index(k):
+  for i, ks in enumerate(enumerate_kernels()):
+    if kernel_cname(k) == kernel_cname(ks):
+      return i
+
 def kernel_conds(k):
   cudart, arch, specific_sms = required_cuda(k)
   if cudart == 0: return (None, None)
@@ -249,25 +254,25 @@ with open(os.path.join(gensrc, "symmetric_kernels.cc"), "w") as f:
   emitln(f, 'nullptr};')
   emitln(f, '')
 
-  emitln(f, 'void* ncclSymGetKernelPtr(ncclSymKernelId id, int red, ncclDataType_t ty) {')
+  emitln(f, 'int ncclSymGetKernelPtr(ncclSymKernelId id, int red, ncclDataType_t ty) {')
   indents += 1
   emitln(f, 'switch (id) {')
-  emitln(f, 'default: return nullptr;')
+  emitln(f, 'default: return -1;')
   for (coll, algo), coll_algo_ks in partition(enumerate_kernels(), lambda k: (k.coll, k.algo)).items():
     emitln(f, 'case ncclSymKernelId_'+coll+'_'+algo+':')
     indents += 1
     if len(coll_algo_ks) == 1:
-      emitln(f, 'return (void*)&'+kernel_cname(coll_algo_ks[0])+';')
+      emitln(f, 'return (int)'+f'{kernel_index(coll_algo_ks[0])}'+';')
     else:
       emitln(f, 'switch ((ncclDevRedOp_t)red) {')
-      emitln(f, 'default: return nullptr;')
+      emitln(f, 'default: return -1;')
       for red, coll_algo_red_ks in partition(coll_algo_ks, lambda k: k.red).items():
         emitln(f, 'case '+red_to_ncclDevRedOp[red]+':')
         indents += 1
         emitln(f, 'switch (ty) {')
-        emitln(f, 'default: return nullptr;')
+        emitln(f, 'default: return -1;')
         for k in coll_algo_red_ks:
-          emitln(f, 'case '+ty_to_ncclDataType[k.ty]+': return (void*)'+kernel_cname(k)+';')
+          emitln(f, 'case '+ty_to_ncclDataType[k.ty]+': return (int)'+f'{kernel_index(k)}'+';')
         emitln(f, '}')
         indents -= 1
       emitln(f, '}')

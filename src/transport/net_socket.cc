@@ -302,7 +302,7 @@ ncclResult_t ncclNetSocketGetNsockNthread(int dev, int* ns, int* nt) {
     if (fd == -1) {
       // Could not find device vendor. This is handled silently so
       // we don't want to print an INFO error.
-      TRACE(NCCL_NET, "Open of %s failed : %s", vendorPath, strerror(errno));
+      INFO(NCCL_NET, "Open of %s failed : %s", vendorPath, strerror(errno));
       goto end;
     }
     char vendor[7];
@@ -396,11 +396,13 @@ ncclResult_t ncclNetSocketConnect(int dev, ncclNetCommConfig_t* config, void* op
     NCCLCHECK(ncclSocketConnect(sock));
 
 socket_connect_check:
+    INFO(NCCL_INIT|NCCL_NET, "ncclnetSocketConnect: Connecting to socket (fd=%d)", sock->fd);
     NCCLCHECK(ncclSocketReady(sock, &ready));
     if (! ready) return ncclSuccess;
     stage->state = ncclNetSocketCommStateSend;
 
 socket_send:
+    INFO(NCCL_INIT|NCCL_NET, "ncclnetSocketConnect: Sending socket to (fd=%d)", sock->fd);
     int done = 0;
     NCCLCHECK(ncclSocketProgress(NCCL_SOCKET_SEND, sock, &i, sizeof(uint8_t), &done));
     if (done == 0) return ncclSuccess;
@@ -439,11 +441,13 @@ ncclResult_t ncclNetSocketAccept(void* listenComm, void** recvComm, ncclNetDevic
     NCCLCHECK(ncclSocketAccept(sock, &lComm->sock));
 
 socket_accept_check:
+    INFO(NCCL_INIT|NCCL_NET, "ncclSocketAccept: Accepting socket on listen socket (fd=%d)", lComm->sock.fd);
     NCCLCHECK(ncclSocketReady(sock, &ready));
     if (!ready) return ncclSuccess;
 
     stage->state = ncclNetSocketCommStateRecv;
 socket_recv:
+    INFO(NCCL_INIT|NCCL_NET, "ncclSocketAccept: Receiving socket index from (fd=%d)", lComm->sock.fd);
     int done = 0;
     NCCLCHECK(ncclSocketProgress(NCCL_SOCKET_RECV, sock, &sendSockIdx, sizeof(uint8_t), &done));
     if (done == 0) return ncclSuccess;
@@ -642,6 +646,7 @@ ncclResult_t ncclNetSocketRegMr(void* comm, void* data, size_t size, int type, v
 ncclResult_t ncclNetSocketDeregMr(void* comm, void* mhandle) { return ncclSuccess; }
 
 ncclResult_t ncclNetSocketIsend(void* sendComm, void* data, size_t size, int tag, void* mhandle, void* phandle, void** request) {
+  INFO(NCCL_INIT|NCCL_NET, "ncclNetSocketIsend: data=%p size=%zu tag=%d mhandle=%p phandle=%p", data, size, tag, mhandle, phandle);
   struct ncclNetSocketComm* comm = (struct ncclNetSocketComm*)sendComm;
   NCCLCHECK(ncclNetSocketGetRequest(comm, NCCL_SOCKET_SEND, data, (int) size, (struct ncclNetSocketRequest**)request));
 #ifdef NCCL_ENABLE_NET_PROFILING

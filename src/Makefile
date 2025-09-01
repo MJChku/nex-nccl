@@ -20,6 +20,14 @@ LIBSRCFILES := \
 	$(wildcard plugin/tuner/*.cc) \
 	$(wildcard plugin/profiler/*.cc) \
 	$(filter-out ras/client.cc,$(wildcard ras/*.cc))
+
+##### Mock topology support
+ifeq ($(MOCK_TOPOLOGY), 1)
+  NCCL_CPPFLAGS += -DNCCL_MOCK_TOPOLOGY
+  LIBSRCFILES += misc/mock_syscalls.cc
+  $(info Building with mock topology support enabled)
+endif
+
 BINSRCFILES := ras/client.cc
 
 ##### lib files

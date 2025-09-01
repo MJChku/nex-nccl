@@ -102,9 +102,11 @@ static void getHostHashOnce() {
   // Make sure the string is terminated
   hostHash[sizeof(hostHash)-1]='\0';
 
-  TRACE(NCCL_INIT,"unique hostname '%s'", hostHash);
+  INFO(NCCL_INIT,"unique hostname '%s'", hostHash);
 
   hostHashValue = getHash(hostHash, strlen(hostHash));
+
+  INFO(NCCL_INIT,"unique host hash %lx", hostHashValue);
 }
 uint64_t getHostHash(void) {
   static pthread_once_t once = PTHREAD_ONCE_INIT;
@@ -127,7 +129,7 @@ uint64_t getPidHash(void) {
   if (len < 0) len = 0;
 
   pname[plen+len]='\0';
-  TRACE(NCCL_INIT,"unique PID '%s'", pname);
+  INFO(NCCL_INIT,"unique PID '%s'", pname);
 
   return getHash(pname, strlen(pname));
 }

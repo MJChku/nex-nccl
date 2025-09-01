@@ -417,7 +417,14 @@ static ncclResult_t getPciPath(const char* busId, char** path) {
   *path = realpath(busPath, NULL);
   if (*path == NULL) {
     WARN("Could not find real path of %s", busPath);
-    return ncclSystemError;
+    // use busPath as a fallback
+    *path = (char*)malloc(strlen(busPath)+1);
+    if (*path == NULL) {
+      WARN("Memory allocation failed for path %s", busPath);
+      return ncclSystemError;
+    }
+    strcpy(*path, busPath);
+    // return ncclSystemError;
   }
   return ncclSuccess;
 }
@@ -469,7 +476,7 @@ ncclResult_t ncclTopoSetAttrFromSys(struct ncclXmlNode* pciNode, const char* pat
   char strValue[MAX_STR_LEN];
   NCCLCHECK(ncclTopoGetStrFromSys(path, fileName, strValue));
   if (strValue[0] != '\0') { NCCLCHECK(xmlSetAttr(pciNode, attrName, strValue)); }
-  TRACE(NCCL_GRAPH, "Read from sys %s/%s -> %s=%s", path, fileName, attrName, strValue);
+  INFO(NCCL_GRAPH, "Read from sys %s/%s -> %s=%s", path, fileName, attrName, strValue);
   return ncclSuccess;
 }
 
@@ -982,7 +989,7 @@ ncclResult_t ncclTopoTrimXmlRec(struct ncclXmlNode* node, int* keep) {
       const char* busid;
       NCCLCHECK(xmlGetAttr(node, "name", &name));
       NCCLCHECK(xmlGetAttr(node, "busid", &busid));
-      TRACE(NCCL_GRAPH, "Removing node %s %s %s\n", node->name, name, busid);
+      INFO(NCCL_GRAPH, "Removing node %s %s %s\n", node->name, name, busid);
 #endif
       NCCLCHECK(xmlRemoveNode(node));
     }

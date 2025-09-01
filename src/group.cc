@@ -47,10 +47,12 @@ ncclResult_t ncclAsyncLaunch(
     job->comm = comm;
     /* check if there are blocking and nonblocking comms at the same time in group. */
     if (comm->destroyFlag) {
+      INFO(NCCL_INIT, "ncclAsyncLaunch: comm %p has destroyFlag set, forcing blocking group.", comm);
       ncclGroupBlocking = 1;
     } else if (ncclGroupBlocking == -1) {
       /* first met communicator */
       ncclGroupBlocking = comm->config.blocking;
+      INFO(NCCL_INIT, "ncclAsyncLaunch: First comm %p in group, setting ncclGroupBlocking to %d from comm->config.blocking", comm, ncclGroupBlocking);
     } else if (ncclGroupBlocking != comm->config.blocking) {
       WARN("Blocking and nonblocking communicators are not allowed in the same group.");
       ret = ncclInvalidArgument;
@@ -197,6 +199,7 @@ struct ncclGroupSymmetricJob {
 NCCL_PARAM(WinStride, "WIN_STRIDE", -1);
 
 ncclResult_t ncclCommGroupRegisterSymmetric(struct ncclAsyncJob* job_) {
+  INFO(NCCL_INIT, "ncclCommGroupRegisterSymmetric: job %p", job_);
   struct ncclGroupSymmetricJob* job = (struct ncclGroupSymmetricJob*)job_;
   struct ncclComm* comm = job->comm;
   ncclResult_t ret = ncclSuccess;
@@ -452,6 +455,7 @@ static ncclResult_t groupLaunch(struct ncclAsyncJob *job_, ncclSimInfo_t* simInf
   struct ncclIntruQueue<struct ncclAsyncJob, &ncclAsyncJob::next> *asyncJobsMain = &gjob->asyncJobs;
   bool *groupAbortFlag = &gjob->abortFlag;
 
+  INFO(NCCL_INIT, "groupLaunch: BEGIN");
   if (!simInfo && groupCommPreconnectHeadMain != nullptr) {
     struct ncclComm* comm = groupCommPreconnectHeadMain;
     do {
@@ -598,6 +602,7 @@ fail:
 }
 
 static ncclResult_t groupLaunchNonBlocking(struct ncclAsyncJob *job_) {
+  INFO(NCCL_INIT, "groupLaunchNonBlocking: Calling groupLaunch for non-blocking group");
   return groupLaunch(job_ /* estimatedTime = NULL */);
 }
 
@@ -654,6 +659,7 @@ ncclResult_t ncclGroupEndInternal(ncclSimInfo_t* simInfo) {
   if (hasCommHead || !ncclIntruQueueEmpty(&groupJob->asyncJobs) || ncclGroupCommPreconnectHead != nullptr) {
     /* make sure ncclGroupBlocking has been set. */
     assert(ncclGroupBlocking == 0 || ncclGroupBlocking == 1);
+    INFO(NCCL_INIT, "ncclGroupEndInternal: ncclGroupBlocking is %d.", ncclGroupBlocking);
     if (ncclGroupBlocking == 0) {
       /* nonblocking group */
       if (!ncclIntruQueueEmpty(&groupJob->asyncJobs)) {
@@ -684,6 +690,7 @@ ncclResult_t ncclGroupEndInternal(ncclSimInfo_t* simInfo) {
       }
 
       groupJob->base.func = groupLaunchNonBlocking;
+      INFO(NCCL_INIT, "Creating thread for non-blocking groupLaunch from ncclGroupEndInternal");
       PTHREADCHECKGOTO(pthread_create(&groupJob->base.thread, NULL, ncclAsyncJobMain, (void*)&groupJob->base), "pthread_create", ret, fail);
       groupJob->nonBlockingInit = true;
       ret = ncclInProgress;
@@ -691,6 +698,7 @@ ncclResult_t ncclGroupEndInternal(ncclSimInfo_t* simInfo) {
       /* blocking group */
       int savedDev;
       CUDACHECKGOTO(cudaGetDevice(&savedDev), ret, fail);
+      INFO(NCCL_INIT, "Calling groupLaunch for blocking group from ncclGroupEndInternal");
       NCCLCHECKGOTO(groupLaunch(&groupJob->base, internalSimInfoPtr), ret, fail);
       CUDACHECKGOTO(cudaSetDevice(savedDev), ret, fail);
       if (simInfo) memcpy((void*)simInfo, (void*)internalSimInfoPtr, realSize);

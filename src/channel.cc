@@ -12,6 +12,7 @@
 ncclResult_t initChannel(struct ncclComm* comm, int channelId) {
   struct ncclChannel* channel = &comm->channels[channelId];
   if (channel->id != -1) return ncclSuccess;
+  INFO(NCCL_INIT, "initChannel: comm %p, channelId %d", comm, channelId);
 
   int nRanks = comm->nRanks;
   int nvlsRanks = comm->localRanks;
@@ -70,6 +71,8 @@ ncclResult_t initNvlsChannel(struct ncclComm* comm, int channelId, struct ncclCo
   if (channel->nvlsPeers != NULL)
     return ncclSuccess;
 
+  INFO(NCCL_INIT, "initNvlsChannel: comm %p, channel %d, parent %p, share %d", comm, channelId, parent, share);
+
   if (channel->id == -1)
     NCCLCHECK(initChannel(comm, channelId));
 
@@ -114,6 +117,8 @@ ncclResult_t initCollnetChannel(struct ncclComm* comm, int channelId, struct ncc
 
   if (channel->collnetPeers != NULL)
     return ncclSuccess;
+
+  INFO(NCCL_INIT, "initCollnetChannel: comm %p, channel %d, parent %p, share %d", comm, channelId, parent, share);
 
   if (channel->id == -1)
     NCCLCHECK(initChannel(comm, channelId));
