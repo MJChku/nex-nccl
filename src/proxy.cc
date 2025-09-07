@@ -985,6 +985,7 @@ static ncclResult_t ncclProxyProgressCreate(struct ncclProxyState* proxyState) {
 ncclResult_t ncclProxyProgressDestroy(struct ncclProxyState* proxyState) {
   struct ncclProxyProgressState* state = &proxyState->progressState;
 
+  INFO(NCCL_PROXY, "Destroying proxy progress thread");
   // Request the proxy to stop and then wake it
   if (state->opsPool) {
     pthread_mutex_lock(&state->opsPool->mutex);

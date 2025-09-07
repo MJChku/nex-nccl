@@ -114,16 +114,16 @@ def required_cuda(k):
 ################################################################################
 
 def kernel_fdep(k):
-  return coll_to_lower[k.coll] + '.cu'
+  return coll_to_lower[k.coll] + '.cc'
 
 def kernel_fname(k):
   if k.coll in reductions:
     if k.algo in ldmc_algos and k.ty.startswith('f8'):
-      return paste('_', coll_to_lower[k.coll], k.red, k.ty, k.algo) + '.cu'
+      return paste('_', coll_to_lower[k.coll], k.red, k.ty, k.algo) + '.cc'
     else:
-      return paste('_', coll_to_lower[k.coll], k.red, k.ty) + '.cu'
+      return paste('_', coll_to_lower[k.coll], k.red, k.ty) + '.cc'
   else:
-    return coll_to_lower[k.coll] + '.cu'
+    return coll_to_lower[k.coll] + '.cc'
 
 def kernel_gencode(k):
   if k.coll in reductions and k.algo in ldmc_algos and k.ty.startswith('f8'):
@@ -136,11 +136,6 @@ def kernel_cname(k):
     return paste("_", "ncclSymDevKernel", k.coll, k.algo, k.red, k.ty)
   else:
     return paste("_", "ncclSymDevKernel", k.coll, k.algo)
-
-def kernel_index(k):
-  for i, ks in enumerate(enumerate_kernels()):
-    if kernel_cname(k) == kernel_cname(ks):
-      return i
 
 def kernel_conds(k):
   cudart, arch, specific_sms = required_cuda(k)
@@ -222,9 +217,9 @@ def partition(vals, keyfn):
 
 kernels_by_file = partition(enumerate_kernels(), lambda k: (kernel_fname(k), k.coll))
 
-# Add dependency only files (e.g. allreduce.cu)
+# Add dependency only files (e.g. allreduce.cc)
 for coll in set(k.coll for k in enumerate_kernels()):
-  fname = coll_to_lower[coll]+'.cu'
+  fname = coll_to_lower[coll]+'.cc'
   if (fname, coll) not in kernels_by_file:
     kernels_by_file[fname, coll] = []
 
@@ -232,8 +227,8 @@ for coll in set(k.coll for k in enumerate_kernels()):
 for (fname, coll), ks in kernels_by_file.items():
   with open(os.path.join(gensrc, fname), "w") as f:
     emitln(f, '#include "symmetric.h"')
-    emitln(f, '#include "symmetric/kernel.cuh"')
-    emitln(f, '#include "symmetric/{coll}.cuh"'.format(coll=coll_to_lower[coll]))
+    emitln(f, '#include "symmetric/kernel.hh"')
+    emitln(f, '#include "symmetric/{coll}.hh"'.format(coll=coll_to_lower[coll]))
     for k in ks:
       emitln(f, instantiate(k))
 
@@ -254,25 +249,25 @@ with open(os.path.join(gensrc, "symmetric_kernels.cc"), "w") as f:
   emitln(f, 'nullptr};')
   emitln(f, '')
 
-  emitln(f, 'int ncclSymGetKernelPtr(ncclSymKernelId id, int red, ncclDataType_t ty) {')
+  emitln(f, 'void* ncclSymGetKernelPtr(ncclSymKernelId id, int red, ncclDataType_t ty) {')
   indents += 1
   emitln(f, 'switch (id) {')
-  emitln(f, 'default: return -1;')
+  emitln(f, 'default: return nullptr;')
   for (coll, algo), coll_algo_ks in partition(enumerate_kernels(), lambda k: (k.coll, k.algo)).items():
     emitln(f, 'case ncclSymKernelId_'+coll+'_'+algo+':')
     indents += 1
     if len(coll_algo_ks) == 1:
-      emitln(f, 'return (int)'+f'{kernel_index(coll_algo_ks[0])}'+';')
+      emitln(f, 'return (void*)&'+kernel_cname(coll_algo_ks[0])+';')
     else:
       emitln(f, 'switch ((ncclDevRedOp_t)red) {')
-      emitln(f, 'default: return -1;')
+      emitln(f, 'default: return nullptr;')
       for red, coll_algo_red_ks in partition(coll_algo_ks, lambda k: k.red).items():
         emitln(f, 'case '+red_to_ncclDevRedOp[red]+':')
         indents += 1
         emitln(f, 'switch (ty) {')
-        emitln(f, 'default: return -1;')
+        emitln(f, 'default: return nullptr;')
         for k in coll_algo_red_ks:
-          emitln(f, 'case '+ty_to_ncclDataType[k.ty]+': return (int)'+f'{kernel_index(k)}'+';')
+          emitln(f, 'case '+ty_to_ncclDataType[k.ty]+': return (void*)'+kernel_cname(k)+';')
         emitln(f, '}')
         indents -= 1
       emitln(f, '}')
@@ -292,8 +287,8 @@ with open(os.path.join(gensrc, "rules.mk"), "w") as f:
   inst_names = sorted(set((k.coll, kernel_fname(k), kernel_gencode(k)) for k in enumerate_kernels()))
   for coll, name, gencode in inst_names:
     f.write(
-      "$(OBJDIR)/genobj/symmetric/{name}.o: $(OBJDIR)/gensrc/symmetric $(OBJDIR)/genobj/symmetric/{coll}.cu.d\n"
-      "\t" "$(call COMPILE_SYM,$@,$(OBJDIR)/gensrc/symmetric/{name},{gencode})\n"
+      "$(OBJDIR)/genobj/symmetric/{name}.o: $(OBJDIR)/gensrc/symmetric $(OBJDIR)/genobj/symmetric/{coll}.cc.d\n"
+      "\t" "$(call COMPILE,$@,$(OBJDIR)/gensrc/symmetric/{name})\n"
       "\n"
-      .format(name=name, coll=coll_to_lower[coll], gencode=gencode)
+      .format(name=name, coll=coll_to_lower[coll])
     )

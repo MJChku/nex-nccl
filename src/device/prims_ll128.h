@@ -364,10 +364,10 @@ public:
     ):
     redOp(redOpArg),
     tid(tid), nthreads(nthreads), wid(tid%WARP_SIZE), warp(tid/WARP_SIZE),
-    warpInBlock(threadIdx.x/WARP_SIZE),
+    warpInBlock(threadIdx().x/WARP_SIZE),
     flagThread((tid%8)==7), group(group),
-    stepSize(ncclShmem.comm.buffSizes[NCCL_PROTO_LL128]/NCCL_STEPS/sizeof(uint64_t)) {
-    auto *channel = &ncclShmem.channel;
+    stepSize(ncclShmem->comm.buffSizes[NCCL_PROTO_LL128]/NCCL_STEPS/sizeof(uint64_t)) {
+    auto *channel = &ncclShmem->channel;
     int nrecv=0, nsend=0;
     while (nrecv < MaxRecv && recvPeers[nrecv] >= 0) {
       loadRecvConn(&channel->peers[recvPeers[nrecv]]->recv[connIndexRecv], nrecv);

@@ -1,0 +1,18 @@
+[
+  {
+    "arguments": [
+      "/usr/bin/g++",
+      "-fPIC",
+      "-O2",
+      "-std=c++17",
+      "-I.",
+      "-c",
+      "-o",
+      "nccl_femu.o",
+      "nccl_femu.cc"
+    ],
+    "directory": "/home/jcm/nex-cuda-light/light/nccl_emu",
+    "file": "/home/jcm/nex-cuda-light/light/nccl_emu/nccl_femu.cc",
+    "output": "/home/jcm/nex-cuda-light/light/nccl_emu/nccl_femu.o"
+  }
+]

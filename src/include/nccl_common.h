@@ -8,6 +8,7 @@
 #define NCCL_DEBUG_H_
 
 #include <cstdint>
+#include "cuda_emulator.hh"
 
 typedef enum {
   NCCL_LOG_NONE = 0,

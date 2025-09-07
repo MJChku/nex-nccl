@@ -190,11 +190,15 @@ static ncclResult_t commFree(ncclComm_t comm) {
    * free all intra-process communicators; therefore, we only need to focus on local
    * resource cleanup in commFree(). */
   if (comm->proxyState && comm->proxyRefCountOld == 0 && comm->proxyState->thread) {
+    
+    INFO(NCCL_INIT, "comm %p rank %d - joining proxy thread", comm, comm->rank);
     PTHREADCHECK(pthread_join(comm->proxyState->thread, nullptr), "pthread_join");
+    INFO(NCCL_INIT, "proxy thread join done 1");
     if (comm->proxyState->threadUDS) {
       // UDS support
       PTHREADCHECK(pthread_join(comm->proxyState->threadUDS, nullptr), "pthread_join");
     }
+    INFO(NCCL_INIT, "proxy thread join done 2");
   }
 
   if (comm->memPool) CUDACHECK(cudaMemPoolDestroy(comm->memPool));
@@ -2142,6 +2146,8 @@ static ncclResult_t commReclaim(struct ncclAsyncJob* job_) {
         }
       }
 
+      INFO(NCCL_INIT, "commReclaim: all %d ranks in intraComm0 %p finalized, free local resources", intraRanks, intracomm0);
+
       /* free local resources. */
       nextIntraComm = intracomm0;
       while (nextIntraComm) {
@@ -2158,6 +2164,7 @@ static ncclResult_t commReclaim(struct ncclAsyncJob* job_) {
     }
   }
 
+  INFO(NCCL_INIT, "commReclaim SUCCESS");
   return ncclSuccess;
 }
 

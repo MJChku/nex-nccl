@@ -10,6 +10,7 @@
 #include "device.h"
 #include "op128.h"
 #include "reduce_kernel.h"
+#include <cassert>
 #include <cstdio>
 #include <cstdint>
 
@@ -18,11 +19,9 @@
 // Define min for ssize_t
 inline __device__ int min(int a, ssize_t b) { return (a < b) ? a : b; }
 
-inline __device__ int loadInt(int* ptr) {
-  int v;
-  asm volatile("ld.volatile.global.u32 %0, [%1];"
-      : "=r"(v) : "l"(ptr));
-  return v;
+// Translate GPU volatile int load to direct memory read on CPU
+inline __device__ __host__  int loadInt(const int* ptr) {
+  return *(ptr);
 }
 
 template<typename RedFn, typename T, int Unroll, int BytePerPack,
@@ -36,7 +35,7 @@ __device__ __forceinline__ void reduceCopyPacks(
     IntBytes &nBytesBehind, IntBytes &nBytesAhead
   ) {
   static_assert(std::is_signed<IntBytes>::value, "IntBytes must be a signed integral type.");
-  if (BytePerPack == 0) __trap();
+  if (BytePerPack == 0) assert(0);
 
   // A hunk is the amount of contiguous data a warp consumes per loop iteration
   // assuming all threads partake.
@@ -238,7 +237,7 @@ __device__ __forceinline__ void reduceCopy(
     bool aligned = true;
     if (lane < nSrcs) aligned &= 0 == cvta_to_global(srcPtrFn(lane)) % (BigPackSize + !BigPackSize);
     if (lane < nDsts) aligned &= 0 == cvta_to_global(dstPtrFn(lane)) % (BigPackSize + !BigPackSize);
-    aligned = __all_sync(~0u, aligned);
+    // aligned = __all_sync(~0u, aligned);
     if (aligned) {
       reduceCopyPacks<RedFn, T, Unroll, BigPackSize,
         MultimemSrcs, MinSrcs, MaxSrcs, MultimemDsts, MinDsts, MaxDsts, PreOpSrcs>

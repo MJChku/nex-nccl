@@ -1177,7 +1177,7 @@ static ncclResult_t sendProxyProgress(struct ncclProxyState* proxyState, struct 
         // *recvTail += args->sliceSteps;
         static int print_once = 0;
         if (print_once == 0) {
-          INFO(NCCL_NET, "sendProxy recvTail %p", recvTail);
+          INFO(NCCL_NET, "sendProxy recvTail %p; protocol p (%d=? %d, %d, %d) size (%d); connFFifo[buffSlot] ( (%p), %p, buffSlot %d)", recvTail, p, NCCL_PROTO_SIMPLE, NCCL_PROTO_LL, NCCL_PROTO_LL128, connFifo[buffSlot].size, connFifo, &connFifo[buffSlot], buffSlot );
           print_once = 1;
         }
         
@@ -1188,7 +1188,7 @@ static ncclResult_t sendProxyProgress(struct ncclProxyState* proxyState, struct 
         
         if (connFifo[buffSlot].size != -1 && ( *recvTail > tail || p == NCCL_PROTO_LL)) {
 
-           INFO(NCCL_NET, "sendProxy connFifo[buffSlot].size %ld, stepSize %d, tail %ld recvTail %ld, offset %ld; (transimited, posted, done)=(%d, %d, %d)",
+           INFO(NCCL_NET, "sendProxy connFifo[buffSlot].size %ld, stepSize %d, tail %ld recvTail %ld (Proto), offset %ld; (transimited, posted, done)=(%d, %d, %d)",
              connFifo[buffSlot].size, stepSize, tail, *recvTail, connFifo[buffSlot].offset, sub->transmitted, sub->posted, sub->done);
           // We have something to receive, let's check if it's completely ready.
           int size = connFifo[buffSlot].size;
@@ -1212,7 +1212,10 @@ static ncclResult_t sendProxyProgress(struct ncclProxyState* proxyState, struct 
             uint32_t flag = NCCL_LL_FLAG(sub->base+sub->transmitted+1);
             int nFifoLines = DIVUP(size, sizeof(union ncclLLFifoLine));
             union ncclLLFifoLine* lines = (union ncclLLFifoLine*)buff;
+            
             for (int i=0; i<nFifoLines; i++) {
+              INFO(NCCL_NET, "sendProxy LLcheck for nFifoLines i(%d), (%p), flag %d/%d (expect %d)",
+              i, &lines[i], lines[i].flag1, lines[i].flag2, flag);
               volatile uint32_t *f1 = &lines[i].flag1;
               volatile uint32_t *f2 = &lines[i].flag2;
               if (f1[0] != flag || f2[0] != flag) { ready = 0; break; }

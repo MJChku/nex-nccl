@@ -21,7 +21,7 @@ DEVGLUE_OBJ  := $(OBJDIR)/device_glue.o
 
 INCFLAGS  = -I. -I.. -I$(BUILDDIR)/include -I../include
 NVCUFLAGS += $(INCFLAGS) --compiler-options "-fPIC -fvisibility=hidden"
-CXXFLAGS  += $(INCFLAGS)
+CXXFLAGS  += $(INCFLAGS) -std=c++17 -Wno-unknown-pragmas -fvisibility=hidden -Wno-reorder -Wno-uninitialized -Wno-comment -Wno-unused-variable -Wno-unused-but-set-variable  
 
 NVCUFLAGS_SYM := -ccbin $(CXX) $(CXXSTD) --expt-extended-lambda -Xptxas -maxrregcount=128 -Xfatbin -compress-all
 NVCUFLAGS_SYM += $(INCFLAGS) --compiler-options "-fPIC -fvisibility=hidden"
@@ -48,8 +48,13 @@ endif
 define COMPILE_SYM
 @$(SAY) "Compiling" $2;\
  mkdir -p $(dir $1);\
- $(NVCC) $(NVCUFLAGS_SYM) $3 -dw $2 -o $1
+ $(call COMPILE$(or $3,$(suffix $2)),$1,$2)
 endef
+
+# @$(SAY) "Compiling" $2;\
+#  mkdir -p $(dir $1);\
+#  $(NVCC) $(NVCUFLAGS_SYM) $3 -dw $2 -o $1
+# endef
 
 DEPENDS.cu = $(NVCC) $(NVCUFLAGS) -M -dc $1
 DEPENDS.cc = $(CXX) $(CXXFLAGS) -M -c $1
@@ -90,7 +95,7 @@ $(OBJDIR)/gensrc/symmetric/rules.mk: $(OBJDIR)/gensrc/symmetric ;
 -include $(OBJDIR)/gensrc/symmetric/rules.mk
 # "gensrc/symmetric/rules.mk" populates $(LIB_OBJS_SYM_GEN)
 
-SRCS = common.cu onerank.cu
+SRCS = common.cc onerank.cc
 
 LIB_OBJS = $(patsubst %, $(OBJDIR)/%.o, $(SRCS)) $(LIB_OBJS_GEN) $(LIB_OBJS_SYM_GEN)
 
@@ -113,9 +118,11 @@ $(OBJDIR)/genobj/symmetric/%.d: $(OBJDIR)/gensrc/symmetric/%
 	$(call DEPENDS,$@,$<)
 
 $(DEVGLUE_OBJ): $(LIB_OBJS)
-	$(NVCC) $(NVCUFLAGS) -dlink $^ -o $@
+	$(CXX) $(CXXFLAGS) -r $^ -o $@
+# 	$(NVCC) $(NVCUFLAGS) -dlink $^ -o $@
 
-$(MANIFEST): $(LIB_OBJS) $(DEVGLUE_OBJ)
+# $(MANIFEST): $(LIB_OBJS) $(DEVGLUE_OBJ)
+$(MANIFEST): $(LIB_OBJS)
 	@echo $^ > $@
 
 -include $(wildcard $(OBJDIR)/*.d)

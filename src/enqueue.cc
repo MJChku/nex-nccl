@@ -165,6 +165,9 @@ static void addWorkBatchToPlan(
     // of the same round since they would use the same connections.
     chan->wipBatch.p2pRounds[chan->wipBatch.nP2ps++] = p2pRound;
   }
+
+  INFO(NCCL_INIT, "addWorkBatchToPlan: channelId %d, workType %d, funcId %d, workOffset %u, offset %u, offsetBitset 0x%016" PRIx64,
+       channelId, workType, devFuncId, workOffset, offset, batch->offsetBitset);
 }
 
 static void finishPlan(struct ncclComm* comm, struct ncclKernelPlan* plan) {
@@ -183,7 +186,7 @@ static void finishPlan(struct ncclComm* comm, struct ncclKernelPlan* plan) {
   plan->kernelArgsSize = alignUp(plan->kernelArgsSize, 16);
   plan->kernelArgs = (struct ncclDevKernelArgs*)ncclMemoryStackAlloc(&comm->memScoped, plan->kernelArgsSize, /*align=*/16);
   plan->kernelArgs->comm = comm->devComm;
-  INFO(NCCL_INIT, "kernelArgs %p, plan->kernelArgs->comm: comm->devComm %p\n", plan->kernelArgs, comm->devComm);
+  INFO(NCCL_INIT, "kernelArgs %p, plan->kernelArgs->comm: comm->devComm %p, workbuf %p\n", plan->kernelArgs, comm->devComm, plan->kernelArgs->workBuf);
   plan->kernelArgs->channelMask = plan->channelMask;
   plan->kernelArgs->workStorageType = plan->workStorageType;
 
@@ -205,8 +208,8 @@ static void finishPlan(struct ncclComm* comm, struct ncclKernelPlan* plan) {
         }
         batchPrev[c] = &batchZero[batchIx];
         batchZero[batchIx++] = batchNode->batch;
-        INFO(NCCL_INIT, "batchZero[%d] %p, channelId %d, workType %d, funcId %d",
-             batchIx-1, &batchZero[batchIx-1], c, batchZero[batchIx-1].workType,
+        INFO(NCCL_INIT, "batchZero %p, batchZero[%d] %p, channelId %d, workType %d, funcId %d",
+             batchZero, batchIx-1, &batchZero[batchIx-1], c, batchZero[batchIx-1].workType,
              batchZero[batchIx-1].funcId);
       }
       if (ncclIntruQueueEmpty(&wipChannels[c].workBatchQueue)) {
@@ -755,10 +758,10 @@ static ncclResult_t scheduleCollTasksToPlan(
     plan->channelMask |= (2ull<<devWork->channelHi) - (1ull<<devWork->channelLo);
     plan->threadPerBlock = std::max(plan->threadPerBlock, task->nWarps*WARP_SIZE);
     if (!plan->kernelSpecialized) {
-      // plan->kernelFn = ncclDevKernelForFunc[task->devFuncId];
-      plan->kernelFn = (void*) (0ULL + task->devFuncId);
-      // plan->kernelSpecialized = ncclDevKernelForFuncIsSpecialized[task->devFuncId];
-      plan->kernelSpecialized = (void*) ((1ULL << 32) + task->devFuncId);
+      plan->kernelFn = ncclDevKernelForFunc[task->devFuncId];
+      // plan->kernelFn = (void*) (0ULL + task->devFuncId);
+      plan->kernelSpecialized = ncclDevKernelForFuncIsSpecialized[task->devFuncId];
+      // plan->kernelSpecialized = (void*) ((1ULL << 32) + task->devFuncId);
       INFO(NCCL_TUNING, "Kernel %p, specialized %d, devFuncId=%d", plan->kernelFn, plan->kernelSpecialized, task->devFuncId);
     }
 
@@ -1051,11 +1054,11 @@ static ncclResult_t scheduleP2pTasksToPlan(
 
   plan->threadPerBlock = std::max(plan->threadPerBlock, NCCL_MAX_NTHREADS);
   if (!plan->kernelSpecialized) {
-    // plan->kernelFn = ncclDevKernelForFunc[ncclDevFuncId_P2p()];
-    plan->kernelFn = (void*)(0ULL+ncclDevFuncId_P2p());
+    plan->kernelFn = ncclDevKernelForFunc[ncclDevFuncId_P2p()];
+    // plan->kernelFn = (void*)(0ULL+ncclDevFuncId_P2p());
     INFO(NCCL_INIT, "Using specialized kernel for P2P %p", plan->kernelFn);
-    // plan->kernelSpecialized = ncclDevKernelForFuncIsSpecialized[ncclDevFuncId_P2p()];
-    plan->kernelSpecialized =(void*)((1ULL << 32) + ncclDevFuncId_P2p());
+    plan->kernelSpecialized = ncclDevKernelForFuncIsSpecialized[ncclDevFuncId_P2p()];
+    // plan->kernelSpecialized =(void*)((1ULL << 32) + ncclDevFuncId_P2p());
   }
 
   // Compute how much to split operations
@@ -1156,6 +1159,7 @@ static ncclResult_t uploadWork(struct ncclComm* comm, struct ncclKernelPlan* pla
   void* fifoBufHost;
   uint32_t fifoCursor, fifoMask;
 
+
   switch (plan->workStorageType) {
   case ncclDevWorkStorageTypeArgs:
     plan->kernelArgs->workBuf = nullptr;
@@ -1194,6 +1198,7 @@ static ncclResult_t uploadWork(struct ncclComm* comm, struct ncclKernelPlan* pla
   struct ncclDevWorkBatch* batchZero = (struct ncclDevWorkBatch*)(plan->kernelArgs+1);
   for (int b=0; b < plan->nWorkBatches; b++) {
     batchZero[b].offsetBase += fifoCursor;
+    INFO(NCCL_INIT, "batchZero (%d) (%p) offsetbase %d", b, &batchZero[b], batchZero[b].offsetBase);
   }
 
   // Write the channel-shared work structs.
@@ -1259,6 +1264,8 @@ static ncclResult_t uploadWork(struct ncclComm* comm, struct ncclKernelPlan* pla
     } break;
   default: break;
   }
+
+
   return ncclSuccess;
 }
 
@@ -1435,7 +1442,8 @@ ncclResult_t ncclLaunchPrepare(struct ncclComm* comm) {
 
         struct ncclTaskColl* task = ncclIntruQueueHead(&planner->collTaskQueue);
         plan->isSymColl = true;
-        plan->kernelFn = (void*) ((2ULL << 32) + (uint32_t)ncclSymGetKernelPtr((ncclSymKernelId)task->devFuncId, task->opDev.op, task->datatype));
+        // plan->kernelFn = (void*) ((2ULL << 32) + (uint32_t)ncclSymGetKernelPtr((ncclSymKernelId)task->devFuncId, task->opDev.op, task->datatype));
+        plan->kernelFn = ncclSymGetKernelPtr((ncclSymKernelId)task->devFuncId, task->opDev.op, task->datatype);
         INFO(NCCL_TUNING, "ncclSymGetKernelPtr: devFuncId %d, op %d, datatype %d -> kernel %p", task->devFuncId, task->opDev.op, task->datatype, plan->kernelFn);
         plan->threadPerBlock = task->nWarps*WARP_SIZE;
         plan->channelMask = uint64_t(-1) >> (64-task->nMaxChannels);
@@ -1547,6 +1555,9 @@ ncclResult_t ncclLaunchKernelBefore_NoUncapturedCuda(struct ncclComm* comm, stru
   // This code is called after we've checked in to the intra-process barrier
   // but before launching the kernel. We are not allowed to call CUDA unless the
   // kernel launch is captured.
+
+  INFO(NCCL_INIT, "called ncclLaunchKernelBefore_NoUncapturedCuda");
+  
   NCCLCHECK(uploadWork(comm, plan));
   return ncclSuccess;
 }
@@ -1587,6 +1598,7 @@ ncclResult_t ncclLaunchKernel(struct ncclComm* comm, struct ncclKernelPlan* plan
   #if CUDART_VERSION >= 11080
     int compCap = comm->compCap;
     unsigned int clusterSize = (compCap >= 90) ? comm->config.cgaClusterSize : 0;
+    INFO(NCCL_TUNING, "compCap %d; ", compCap);
 
     CUlaunchConfig launchConfig = {0};
     CUlaunchAttribute launchAttrs[6] = {};
