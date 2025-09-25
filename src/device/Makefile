@@ -21,7 +21,7 @@ DEVGLUE_OBJ  := $(OBJDIR)/device_glue.o
 
 INCFLAGS  = -I. -I.. -I$(BUILDDIR)/include -I../include
 NVCUFLAGS += $(INCFLAGS) --compiler-options "-fPIC -fvisibility=hidden"
-CXXFLAGS  += $(INCFLAGS) -std=c++17 -Wno-unknown-pragmas -fvisibility=hidden -Wno-reorder -Wno-uninitialized -Wno-comment -Wno-unused-variable -Wno-unused-but-set-variable  
+CXXFLAGS  += $(INCFLAGS) -O2 -std=c++17 -Wno-unknown-pragmas -fvisibility=hidden -Wno-reorder -Wno-uninitialized -Wno-comment -Wno-unused-variable -Wno-unused-but-set-variable -Wno-unused-local-typedefs -Wno-int-in-bool-context
 
 NVCUFLAGS_SYM := -ccbin $(CXX) $(CXXSTD) --expt-extended-lambda -Xptxas -maxrregcount=128 -Xfatbin -compress-all
 NVCUFLAGS_SYM += $(INCFLAGS) --compiler-options "-fPIC -fvisibility=hidden"
