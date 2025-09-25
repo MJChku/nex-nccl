@@ -1188,8 +1188,9 @@ static ncclResult_t sendProxyProgress(struct ncclProxyState* proxyState, struct 
         
         if (connFifo[buffSlot].size != -1 && ( *recvTail > tail || p == NCCL_PROTO_LL)) {
 
-           INFO(NCCL_NET, "sendProxy connFifo[buffSlot].size %ld, stepSize %d, tail %ld recvTail %ld (Proto), offset %ld; (transimited, posted, done)=(%d, %d, %d)",
-             connFifo[buffSlot].size, stepSize, tail, *recvTail, connFifo[buffSlot].offset, sub->transmitted, sub->posted, sub->done);
+          //  INFO(NCCL_NET, "sendProxy connFifo[buffSlot].size %ld, stepSize %d, tail %ld recvTail %ld (Proto), offset %ld; (transimited, posted, done)=(%d, %d, %d)",
+          //    connFifo[buffSlot].size, stepSize, tail, *recvTail, connFifo[buffSlot].offset, sub->transmitted, sub->posted, sub->done);
+          
           // We have something to receive, let's check if it's completely ready.
           int size = connFifo[buffSlot].size;
           bool shared = (p == NCCL_PROTO_SIMPLE) && resources->shared;
@@ -1346,8 +1347,13 @@ static ncclResult_t recvProxyProgress(struct ncclProxyState* proxyState, struct 
       void* phandles[NCCL_PROXY_MAX_SUBS];
       for (int i=0; i<subGroup->groupSize; i++) {
         struct ncclProxySubArgs* sub = subGroup + i;
+        
         int postedStepId = sub->posted;
         if (sub->posted < sub->nsteps) {
+          
+          // INFO(NCCL_NET, "recvProxy sub->posted %d, sub->nsteps %d, proto %d ",
+          //    sub->posted, sub->nsteps, args->protocol);
+
           if (sub->posted >= sub->done + maxDepth) { subCount = 0; break; }
           ncclProfilerStartRecvProxyStepEvent(s+i, args, postedStepId);
           struct recvNetResources* resources = (struct recvNetResources*) (sub->connection->transportResources);
@@ -1395,7 +1401,10 @@ static ncclResult_t recvProxyProgress(struct ncclProxyState* proxyState, struct 
           subCount++;
         }
       }
+
       if (subCount) {
+        INFO(NCCL_NET, "recvProxy groupSize %d, subCount %d", subGroup->groupSize, subCount);
+
         uint64_t step = subGroup->posted;
         struct recvNetResources* resources = (struct recvNetResources*) (subGroup->connection->transportResources);
         void** requestPtr = subGroup->requests+(step%NCCL_STEPS);
@@ -1408,7 +1417,7 @@ static ncclResult_t recvProxyProgress(struct ncclProxyState* proxyState, struct 
           for (int i=0; i<subGroup->groupSize; i++) {
             struct ncclProxySubArgs* sub = subGroup+i;
             int postedStepId = sub->posted;
-            // INFO(NCCL_NET, "recvProxy [%ld/%ld/%d] Irecv posted, buff %p, size %ld, myRank %d, channelId %d, mhandle %p", sub->posted, (sub->base + sub->posted) % NCCL_STEPS, sub->nsteps, ptrs[i], sizes[i], proxyState->tpRank, sub->channelId, mhandles[i]);
+            INFO(NCCL_NET, "recvProxy [%ld/%ld/%d] Irecv posted, buff %p, size %ld, myRank %d, channelId %d, mhandle %p", sub->posted, (sub->base + sub->posted) % NCCL_STEPS, sub->nsteps, ptrs[i], sizes[i], proxyState->tpRank, sub->channelId, mhandles[i]);
             sub->posted += args->sliceSteps;
             ncclProfilerRecordProxyStepEventState(s+i, args, postedStepId, ncclProfilerProxyStepRecvWait);
           }

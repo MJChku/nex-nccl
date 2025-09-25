@@ -171,7 +171,7 @@ __device__ __forceinline__ void loadWorkBatchToShmem(
     // since we know all lanes will be querying the same bitmask we can compute
     // much faster using shared memory.
     uint8_t* fnsOfBitset = (uint8_t*)ncclScratchForWarp(threadIdx().x/WARP_SIZE);
-    // printf("tid(%d) batch (%d) (%p) %p, offsetBitset: %p, offsetBase %d\n", tid, batchIx, args+1, batch, batch->offsetBitset, batch->offsetBase);
+    // printf("tid(%d) batch (%d) (%p) %p, offsetBitset: %ld, offsetBase %d\n", tid, batchIx, args+1, batch, batch->offsetBitset, batch->offsetBase);
 
     __syncwarp();
     if (uint32_t(batch->offsetBitset) & (1u<<lane)) {

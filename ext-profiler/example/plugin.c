@@ -13,6 +13,7 @@
 #include <sys/syscall.h>
 #include <unistd.h>
 #include <x86intrin.h>
+#include <cinttypes>
 #include "event.h"
 #include "print_event.h"
 
@@ -42,20 +43,63 @@ ncclDebugLogger_t logFn;
 #define INFO(FLAGS, ...) logFn(NCCL_LOG_INFO, (FLAGS), __func__, __LINE__, __VA_ARGS__)
 
 static double freq = -1;
+
+static uint64_t find_freq_Mhz(){
+    FILE *fp = fopen("/proc/cpuinfo", "r");
+    if (fp == NULL) {
+        perror("Failed to open /proc/cpuinfo");
+        return 0;
+    }
+
+    char line[256];
+    uint64_t freq_khz = 0;
+
+    while (fgets(line, sizeof(line), fp)) {
+        if (sscanf(line, "cpu MHz : %" SCNu64, &freq_khz) == 1) {
+            break;
+        }
+    }
+
+    fclose(fp);
+
+    if (freq_khz == 0) {
+        fprintf(stderr, "Failed to find CPU frequency in /proc/cpuinfo\n");
+    }
+
+    return freq_khz;
+}
+
 __hidden void calibrate() {
+  if (freq > 0) return;
+  uint64_t tsc_Mhz = find_freq_Mhz();
+  if (tsc_Mhz == 0) {
+    fprintf(stderr, "Profiler: Failed to find CPU frequency\n");
+    exit(1);
+  }
+  freq = (double)tsc_Mhz;
+  return;
+
   struct timeval tv;
   gettimeofday(&tv, NULL);
   uint64_t timeCycles = __rdtsc();
   double time = - tv.tv_sec*1e6 - tv.tv_usec;
+  printf("gettimeofday time %d us \n", (int)(tv.tv_sec*1e6 + tv.tv_usec));
+
   uint64_t total = 0ULL;
   for (int i = 0; i < 10000; i++) total += __rdtsc();
   gettimeofday(&tv, NULL);
+
+  printf("gettimeofday time %d us \n", (int)(tv.tv_sec*1e6 + tv.tv_usec));
+
   timeCycles = __rdtsc() - timeCycles;
   time += tv.tv_sec*1e6 + tv.tv_usec;
   freq = timeCycles / time;
+  printf("Calibrate: time %f us, cycles %lu, freq %f MHz\n", time/10000.0, timeCycles/10000, freq);
 }
 
 __hidden double gettime(void) {
+  uint64_t cycles = __rdtsc();
+  // printf("cycles %lu, freq %lf (Mhz) \n", cycles, freq);
   return __rdtsc() / freq;
 }
 

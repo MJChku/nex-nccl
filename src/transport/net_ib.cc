@@ -666,6 +666,9 @@ ncclResult_t ncclIbInit(ncclDebugLogger_t logFunction, ncclProfilerCallback_t pr
           if (ncclSuccess != wrap_ibv_close_device(context)) { ret = ncclInternalError; goto fail; }
           continue;
         }
+
+        INFO(NCCL_NET, "NET/IB : Device %s has %d ports", devices[d]->name, devAttr.phys_port_cnt);
+
         for (int port_num = 1; port_num <= devAttr.phys_port_cnt; port_num++) {
           for (int dataDirect = 0; dataDirect < 1 + dataDirectSupported; ++dataDirect) {
             struct ibv_port_attr portAttr;
@@ -693,6 +696,7 @@ ncclResult_t ncclIbInit(ncclDebugLogger_t logFunction, ncclProfilerCallback_t pr
             ncclIbDevs[ncclNIbDevs].pdRefs = 0;
             ncclIbDevs[ncclNIbDevs].pd = NULL;
             if (!dataDirect) {
+              INFO(NCCL_NET, "NET/IB : ncclIbGetPciPath for device:%s port:%d", devices[d]->name, port_num);
               strncpy(ncclIbDevs[ncclNIbDevs].devName, devices[d]->name, MAXNAMESIZE);
               NCCLCHECKGOTO(ncclIbGetPciPath(ncclIbDevs[ncclNIbDevs].devName, &ncclIbDevs[ncclNIbDevs].pciPath, &ncclIbDevs[ncclNIbDevs].realPort), ret, fail);
             }
@@ -1206,24 +1210,27 @@ ncclResult_t ncclIbRtrQp(struct ibv_qp* qp, struct ncclIbGidInfo* sGidInfo, uint
         qpAttr.ah_attr.is_global = 0;
         qpAttr.ah_attr.dlid = info->lid;
     } else {
-	uint16_t flid = ncclIbExtractFlid(&info->gid);
+        uint16_t flid = ncclIbExtractFlid(&info->gid);
         if (flid == 0) {
           WARN("Warning: remote FLID configured as zero even when endpoints are on different subnets, using dlid as fallback");
           qpAttr.ah_attr.dlid = info->lid;
-	} else {
-          qpAttr.ah_attr.dlid = ncclIbExtractFlid(&info->gid);
-	}
+        } else {
+                qpAttr.ah_attr.dlid = ncclIbExtractFlid(&info->gid);
+        }
         qpAttr.ah_attr.is_global = 1;
         qpAttr.ah_attr.grh.dgid.global.subnet_prefix = info->gid.global.subnet_prefix;
         qpAttr.ah_attr.grh.dgid.global.interface_id = info->gid.global.interface_id;
         qpAttr.ah_attr.grh.sgid_index = sGidInfo->localGidIndex;
-	qpAttr.ah_attr.grh.hop_limit = 255;
+	      qpAttr.ah_attr.grh.hop_limit = 255;
     }
   }
+  // NEX: simple overwrite for now
+  qpAttr.ah_attr.dlid = info->lid;
+
   qpAttr.ah_attr.sl = sl;
   qpAttr.ah_attr.src_path_bits = 0;
   qpAttr.ah_attr.port_num = info->ib_port;
-  INFO(NCCL_NET, "NET/IB : ncclIbRtrQp qpn=%u mtu=%d dst=%u ll=%u port=%u sl: %d tc: %d", qp->qp_num, info->mtu, dest_qp_num, info->link_layer, info->ib_port, qpAttr.ah_attr.sl, qpAttr.ah_attr.grh.traffic_class);
+  INFO(NCCL_NET, "NET/IB : ncclIbRtrQp qpn=%u lid=%u mtu=%d dst=%u ll=%u port=%u sl: %d tc: %d", qp->qp_num, info->lid, info->mtu, dest_qp_num, info->link_layer, info->ib_port, qpAttr.ah_attr.sl, qpAttr.ah_attr.grh.traffic_class);
   NCCLCHECK(wrap_ibv_modify_qp(qp, &qpAttr, IBV_QP_STATE | IBV_QP_AV | IBV_QP_PATH_MTU | IBV_QP_DEST_QPN | IBV_QP_RQ_PSN | IBV_QP_MAX_DEST_RD_ATOMIC | IBV_QP_MIN_RNR_TIMER));
   return ncclSuccess;
 }
@@ -2219,6 +2226,8 @@ ncclResult_t ncclIbPostFifo(struct ncclIbRecvComm* comm, int n, void** data, siz
     localElem[i].tag = tags[i];
     localElem[i].idx = comm->remFifo.fifoTail+1;
   }
+
+  
   wr.wr.rdma.remote_addr = comm->remFifo.addr + slot*NCCL_NET_IB_MAX_RECVS*sizeof(struct ncclIbSendFifo);
 
   // Lookup the correct fifoRkey
@@ -2271,6 +2280,7 @@ ncclResult_t ncclIbPostFifo(struct ncclIbRecvComm* comm, int n, void** data, siz
 
 ncclResult_t ncclIbIrecv(void* recvComm, int n, void** data, size_t* sizes, int* tags, void** mhandles, void** phandles, void** request) {
   struct ncclIbRecvComm* comm = (struct ncclIbRecvComm*)recvComm;
+  INFO(NCCL_NET,"ncclIbIrecv n %d", n);
   if (comm->base.ready == 0) {
     WARN("NET/IB: ncclIbIrecv() called when comm->base.ready == 0");
     *request = NULL;
