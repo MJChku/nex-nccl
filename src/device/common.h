@@ -6,6 +6,7 @@
 #include <cstring>
 #include <chrono>
 #include <thread>
+#include <atomic>
 
 #include "collectives.h"
 #include "device.h"
@@ -67,20 +68,18 @@ extern void __threadfence();
 inline void __trap(){assert(0);};
 inline int __popc(uint x){return __builtin_popcount(x);}
 inline uint64_t atomicMax(uint64_t *address, uint64_t val) {
-    // not atomic
-    uint64_t old = *address;
-    if (val > old) {
-        *address = val;
-    }
+    // Use atomic for thread safety
+    std::atomic<uint64_t>* atomic_addr = reinterpret_cast<std::atomic<uint64_t>*>(address);
+    uint64_t old = atomic_addr->load(std::memory_order_relaxed);
+    while (val > old && !atomic_addr->compare_exchange_weak(old, val, std::memory_order_acq_rel, std::memory_order_relaxed)) {}
     return old;
 }
 
 inline long long int atomicMax(long long int *address, long long int val) {
-    // not atomic
-    long long int old = *address;
-    if (val > old) {
-        *address = val;
-    }
+    // Use atomic for thread safety
+    std::atomic<long long int>* atomic_addr = reinterpret_cast<std::atomic<long long int>*>(address);
+    long long int old = atomic_addr->load(std::memory_order_relaxed);
+    while (val > old && !atomic_addr->compare_exchange_weak(old, val, std::memory_order_acq_rel, std::memory_order_relaxed)) {}
     return old;
 }
 

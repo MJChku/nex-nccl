@@ -168,10 +168,10 @@ inline __device__  BytePack<Size> ld_global(uintptr_t addr)
   return v;
 }
 template<int Size>
-inline __device__  void st_global(uintptr_t addr,
+inline __device__  __attribute__((no_sanitize("undefined"))) void st_global(uintptr_t addr,
                                                  BytePack<Size> value)
 {
-  std::memcpy(reinterpret_cast<void*>(addr), &value, Size);
+  if (Size > 0) std::memcpy(reinterpret_cast<void*>(addr), &value, Size);
 }
 
 /* Shared‐space versions just forward to the same implementation          */

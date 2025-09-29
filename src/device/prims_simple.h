@@ -101,9 +101,9 @@ class Primitives<
       return ans;
     }
     #endif
-    // volatile is faster than acquire but not as correct. Make sure reduceCopy
-    // loads data using volatile so it doesn't see stale data in L1.
-    return ld_volatile_global(ptr);
+    // Use atomic load for better memory ordering
+    std::atomic<uint64_t>* atomic_ptr = reinterpret_cast<std::atomic<uint64_t>*>(ptr);
+    return atomic_ptr->load(std::memory_order_acquire);
   }
 
   template <int DirectRecv, int DirectSend, int Recv, int Send, int Src, int Dst>

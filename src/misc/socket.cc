@@ -880,7 +880,6 @@ ncclResult_t ncclSocketWait(int op, struct ncclSocket* sock, void* ptr, int size
 
 ncclResult_t ncclSocketSend(struct ncclSocket* sock, void* ptr, int size) {
   int offset = 0;
-  char line[SOCKET_NAME_MAXLEN+1];
   if (sock == NULL) {
     WARN("ncclSocketSend: pass NULL socket");
     return ncclInvalidArgument;
@@ -897,7 +896,6 @@ ncclResult_t ncclSocketSend(struct ncclSocket* sock, void* ptr, int size) {
 
 ncclResult_t ncclSocketRecv(struct ncclSocket* sock, void* ptr, int size) {
   int offset = 0;
-  char line[SOCKET_NAME_MAXLEN+1];
   if (sock == NULL) {
     WARN("ncclSocketRecv: pass NULL socket");
     return ncclInvalidArgument;
