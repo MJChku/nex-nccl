@@ -13,6 +13,8 @@
 #include <cassert>
 #include <cstdio>
 #include <cstdint>
+#include <type_traits>
+#include <cstring>
 
 #include <cuda_runtime.h>
 
@@ -34,6 +36,53 @@ __device__ __forceinline__ void reduceCopyPacks(
     int nSrcs, SrcPtrFn const &srcPtrFn, int nDsts, DstPtrFn const &dstPtrFn,
     IntBytes &nBytesBehind, IntBytes &nBytesAhead
   ) {
+#if 0
+printf("NCCL_DEVICE: WARNING, not using the original code at all.") 
+using Scalar = T;
+  RedFn redFn(redArg);
+  int totalBytes = nBytesBehind + nBytesAhead;
+  if (totalBytes <= 0 || nSrcs == 0 || nDsts == 0) {
+    return;
+  }
+
+  Scalar* srcPtrs[MaxSrcs > 0 ? MaxSrcs : 1];
+  for (int s = 0; s < nSrcs; ++s) {
+    srcPtrs[s] = reinterpret_cast<Scalar*>(srcPtrFn(s));
+  }
+
+  Scalar* dstPtrs[MaxDsts > 0 ? MaxDsts : 1];
+  for (int d = 0; d < nDsts; ++d) {
+    dstPtrs[d] = reinterpret_cast<Scalar*>(dstPtrFn(d));
+  }
+
+  size_t totalElts = static_cast<size_t>(totalBytes / sizeof(Scalar));
+  for (size_t idx = thread; idx < totalElts; idx += nThreads) {
+    Scalar val = srcPtrs[0] ? srcPtrs[0][idx] : Scalar{};
+    // if constexpr (PreOpSrcs > 0) {
+      // val = ncclEmuPreOpElement(redFn, preOpArgs, 0, val);
+    // }
+    for (int s = 1; s < nSrcs; ++s) {
+      if (!srcPtrs[s]) continue;
+      Scalar tmp = srcPtrs[s][idx];
+      // if constexpr (PreOpSrcs > 0) {
+        // if (s < PreOpSrcs) tmp = ncclEmuPreOpElement(redFn, preOpArgs, s, tmp);
+      // }
+      val = tmp;
+      // val = ncclEmuReduceElement(redFn, val, tmp);
+    }
+    if (postOp) {
+      // val = ncclEmuPostOpElement(redFn, val);
+    }
+    for (int d = 0; d < nDsts; ++d) {
+      if (dstPtrs[d]) dstPtrs[d][idx] = val;
+    }
+  }
+
+  nBytesBehind += nBytesAhead;
+  nBytesAhead = 0;
+  return;
+#else
+
   static_assert(std::is_signed<IntBytes>::value, "IntBytes must be a signed integral type.");
   if (BytePerPack == 0) assert(0);
 
@@ -202,6 +251,7 @@ __device__ __forceinline__ void reduceCopyPacks(
   // This effectively assigns: warp = (warp-nHunks+nWarps)%nWarps;
   warp = -nHunksAhead;
   thread = warp*WARP_SIZE + lane;
+#endif
 }
 
 template<int Unroll, typename RedFn, typename T,
@@ -237,7 +287,7 @@ __device__ __forceinline__ void reduceCopy(
     bool aligned = true;
     if (lane < nSrcs) aligned &= 0 == cvta_to_global(srcPtrFn(lane)) % (BigPackSize + !BigPackSize);
     if (lane < nDsts) aligned &= 0 == cvta_to_global(dstPtrFn(lane)) % (BigPackSize + !BigPackSize);
-    // aligned = __all_sync(~0u, aligned);
+    aligned = __all_sync(~0u, aligned);
     if (aligned) {
       reduceCopyPacks<RedFn, T, Unroll, BigPackSize,
         MultimemSrcs, MinSrcs, MaxSrcs, MultimemDsts, MinDsts, MaxDsts, PreOpSrcs>

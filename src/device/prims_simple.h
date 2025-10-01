@@ -233,6 +233,10 @@ class Primitives<
           T* userOutput = (T*)ncclShmem->groups[group].userOutput;
           if (Src) ncclShmem->groups[group].srcs[0] = (SrcBuf==Input ? userInput : userOutput) + srcIx + offset;
           if (Dst) ncclShmem->groups[group].dsts[0] = (DstBuf==Input ? userInput : userOutput) + dstIx + offset;
+          // printf("NCCL_DEVICE: genericOp group %d rank %d tid %d slice %d offset %d sliceSize %d src %p dst %p\n",
+          //        group, ncclShmem->comm.rank, tid, slice, offset, sliceSize,
+          //        (Src ? ncclShmem->groups[group].srcs[0] : nullptr),
+          //        (Dst ? ncclShmem->groups[group].dsts[0] : nullptr));
         }
         waitPeer<DirectRecv, DirectSend, Recv, Send, Src, Dst>(srcIx, dstIx, offset, sliceSize);
         subBarrier();
@@ -440,7 +444,11 @@ private:
         if (Send) {
           // Scatter pre-scales data of input buffer only in non-Direct case
           constexpr int PreOpSrcs = DirectSend ? 0 : 1;
-          if (tid==0) ncclShmem->groups[group].srcs[0] = (T*)ncclShmem->groups[group].userInput + inpIx + offset;
+          if (tid==0) {
+            ncclShmem->groups[group].srcs[0] = (T*)ncclShmem->groups[group].userInput + inpIx + offset;
+            // printf("NCCL_DEVICE: ScatterGatherOp src %p group %d inpIx %ld offset %d realSize %ld\n", ncclShmem->groups[group].srcs[0], group, inpIx, offset, realSize);
+          }
+
           // realSize is not accurate here; but intra-node does not rely on sizes FIFO
           waitPeer<0, DirectSend, 0, 1, 1, 0>(0, inpIx, offset, realSize);
           subBarrier();
@@ -744,6 +752,8 @@ private:
       ncclShmem->groups[group].userInput = (void*)inputBuf;
       ncclShmem->groups[group].userOutput = (void*)outputBuf;
       ncclShmem->redOpArgs[0] = redOpArg;  // scaler for local input
+      // printf("NCCL_DEVICE: setDataPtrs group %d rank %d inputBuf %p outputBuf %p redOpArg %p work %p ipcReg %d peer %d\n",
+      //     group, ncclShmem->comm.rank, inputBuf, outputBuf, (void*)redOpArg, work, ipcReg, peer);
     }
 
     if (Direct && ipcReg) {
@@ -1059,6 +1069,8 @@ private:
     int nelem = ps->nelem < 0 ? 0 : ps->nelem;
     T* userInput = (T*)ncclShmem->groups[group].userInput;
     T* userOutput = (T*)ncclShmem->groups[group].userOutput;
+    // printf("NCCL_DEVICE: patCopy inputbuf %p, outputbuf %p, nelem %d, inpIx %d, outIx %d, recvDim %d, recvOffset %d, sendDim %d, sendOffset %d, stepOffset %d\n",
+    //        userInput, userOutput, nelem, ps->inpIx, ps->outIx, ps->recvDim, ps->recvOffset, ps->sendDim, ps->sendOffset, ps->stepOffset);
 
     bool recv = ps->recvDim >= 0 && (flags & (RolePostRecv|RoleWaitRecv));
     bool send = ps->sendDim >= 0 && (flags & (RolePostSend|RoleWaitSend));

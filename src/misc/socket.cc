@@ -370,7 +370,7 @@ ncclResult_t ncclFindInterfaces(char* ifNames, union ncclSocketAddress *ifAddrs,
   const char* env = ncclGetEnv("NCCL_SOCKET_IFNAME");
   *nIfs = 0;
   if (env && strlen(env) > 1) {
-    INFO(NCCL_ENV, "NCCL_SOCKET_IFNAME set by environment to %s", env);
+    INFO(NCCL_ENV, "[NEX] NCCL_SOCKET_IFNAME set by environment to %s", env);
     // Specified by user : find or fail
     if (shownIfName++ == 0) INFO(NCCL_NET, "NCCL_SOCKET_IFNAME set to %s", env);
     NCCLCHECK(findInterfaces(env, ifNames, ifAddrs, sock_family, ifNameMaxSize, maxIfs, nIfs));

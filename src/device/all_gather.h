@@ -24,6 +24,7 @@ namespace {
     T *inputBuf = (T*)work->sendbuff;
     T *outputBuf = (T*)work->recvbuff;
 
+    // printf("NCCL_DEVICE: AllGather: sendbuff %p, recvbuff %p, netoffload %d\n", inputBuf, outputBuf, isNetOffload);
     // If isNetOffload == true, we only use 1 warp to drive Ring algo/network communication
     // and the rest of warps proceed to copy src data into dst buffer in parallel when AG
     // is not in-place.
@@ -48,6 +49,7 @@ namespace {
         // step 0: push data to next GPU
         rankDest = ringRanks[0];
         offset = dataOffset + rankDest * count;
+        // printf("NCCL_DEVICE: AllGather: dataOffset %ld, rankDest %d, offset %ld\n", dataOffset, rankDest, offset);
 
         if ((inputBuf + dataOffset == outputBuf + offset) || isNetOffload) { // In place or onePPN
           prims.directSend(dataOffset, offset, nelem);

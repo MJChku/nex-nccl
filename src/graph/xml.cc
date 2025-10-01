@@ -17,6 +17,7 @@
 #include <cpuid.h>
 #endif
 
+#define ENABLE_TRACE
 // Arbitrarily large number for constructing virtual topology string
 #define NCCL_MAX_XML_DEPTH 1024
 
@@ -750,8 +751,17 @@ ncclResult_t ncclTopoGetXmlFromGpu(struct ncclXmlNode* pciNode, nvmlDevice_t nvm
 
   int dev = -1;
   NCCLCHECK(xmlGetAttrIndex(gpuNode, "dev", &index));
+
+  int value = -1;
+  xmlGetAttrInt(gpuNode, "sm", &value); // Ignore error
+  printf("GPU dev sm %d\n", value);
   if (index == -1) {
-    NCCLCHECK(ncclNvmlDeviceGetIndex(nvmlDev, (unsigned int*)&dev));
+    printf("nvml dev %p %d \n", nvmlDev, dev);
+    if(ncclNvmlDeviceGetIndex(nvmlDev, (unsigned int*)&dev) != ncclSuccess) {
+      WARN("Failed to get NVML device index");
+      return ncclInternalError;
+    }
+    // NCCLCHECK(ncclNvmlDeviceGetIndex(nvmlDev, (unsigned int*)&dev));
     NCCLCHECK(xmlSetAttrInt(gpuNode, "dev", dev));
   }
   NCCLCHECK(xmlGetAttrInt(gpuNode, "dev", &dev));

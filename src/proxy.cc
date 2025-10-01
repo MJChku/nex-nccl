@@ -1455,7 +1455,7 @@ static ncclResult_t proxyProgressAsync(struct ncclProxyAsyncOp* op, struct ncclP
     INFO(NCCL_PROXY, "proxyProgressAsync::proxySetup() opId=%p", op->opId);
     res = op->connection->tcomm->proxySetup(op->connection, proxyState, op->reqBuff, op->reqSize, op->respBuff, op->respSize, &done);
   } else if (op->type == ncclProxyMsgConnect) {
-    INFO(NCCL_PROXY, "proxyProgressAsync::proxyConnect() opId=%p op.reqBuff=%p", op->opId, op->reqBuff);
+    // INFO(NCCL_PROXY, "proxyProgressAsync::proxyConnect() opId=%p op.reqBuff=%p", op->opId, op->reqBuff);
     res = op->connection->tcomm->proxyConnect(op->connection, proxyState, op->reqBuff, op->reqSize, op->respBuff, op->respSize, &done);
   } else if (op->type == ncclProxyMsgSharedInit) {
     int nChannels = (int) *op->reqBuff;

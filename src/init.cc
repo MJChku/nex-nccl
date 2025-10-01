@@ -357,24 +357,24 @@ static ncclResult_t commAlloc(struct ncclComm* comm, struct ncclComm* parent, in
   }
   // Try to create a CUDA object right away. If there is something wrong with
   // the device we're on (failure cause #1) , better know it early.
-  // CUDACHECK(cudaGetDevice(&comm->cudaDev));
+  CUDACHECK(cudaGetDevice(&comm->cudaDev));
 
-  // NCCLCHECK(ncclCudaContextTrack(&comm->context));
+  NCCLCHECK(ncclCudaContextTrack(&comm->context));
 
-  // NCCLCHECK(getBusId(comm->cudaDev, &comm->busId));
-  // nvmlDevice_t nvmlDev;
-  // char busId[NVML_DEVICE_PCI_BUS_ID_BUFFER_SIZE];
-  // NCCLCHECK(int64ToBusId(comm->busId, busId));
-  // INFO(NCCL_INIT, "After int64ToBusId in commAlloc: busId %s", busId);
-  // NCCLCHECK(ncclNvmlDeviceGetHandleByPciBusId(busId, &nvmlDev));
-  // NCCLCHECK(ncclNvmlDeviceGetIndex(nvmlDev, (unsigned int*)&comm->nvmlDev));
+  NCCLCHECK(getBusId(comm->cudaDev, &comm->busId));
+  nvmlDevice_t nvmlDev;
+  char busId[NVML_DEVICE_PCI_BUS_ID_BUFFER_SIZE];
+  NCCLCHECK(int64ToBusId(comm->busId, busId));
+  INFO(NCCL_INIT, "After int64ToBusId in commAlloc: busId %s ", busId);
+  NCCLCHECK(ncclNvmlDeviceGetHandleByPciBusId(busId, &nvmlDev));
+  NCCLCHECK(ncclNvmlDeviceGetIndex(nvmlDev, (unsigned int*)&comm->nvmlDev));
 
   // comm->compCap = ncclCudaCompCap();
-  // INFO(NCCL_INIT,"comm %p rank %d nranks %d cudaDev %d busId %lx compCap %d", comm, rank, ndev, comm->cudaDev, comm->busId, comm->compCap);
+  INFO(NCCL_INIT,"comm %p rank %d nranks %d cudaDev %d busId %lx compCap %d", comm, rank, ndev, comm->cudaDev, comm->busId, comm->compCap);
 
-  static const int gpuBusIds[4] = { 0x13000, 0x19000, 0x48000, 0x4d000 };
-  comm->cudaDev = rank;
-  comm->busId = gpuBusIds[rank]; // This is a hack to avoid calling cudaGetDevice() and nvmlDeviceGetHandleByPciBusId() in the init path.
+  // static const int gpuBusIds[4] = { 0x13000, 0x19000, 0x48000, 0x4d000 };
+  // comm->cudaDev = rank;
+  // comm->busId = gpuBusIds[rank]; // This is a hack to avoid calling cudaGetDevice() and nvmlDeviceGetHandleByPciBusId() in the init path.
   comm->compCap = -1; // Will be set from Xml
 
   comm->checkPointers = ncclParamCheckPointers() == 1 ? true : false;

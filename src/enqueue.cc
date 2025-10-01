@@ -1241,6 +1241,7 @@ static ncclResult_t uploadWork(struct ncclComm* comm, struct ncclKernelPlan* pla
       plan->kernelArgs->workBuf = fifoBufDev;
 
       // coverity[uninit_use_in_call:FALSE] => fifoBufHost is never NULL
+      INFO(NCCL_INIT, "Uploading %ld bytes of work to persistent buffer %p using memcpyasync", (long)workBytes, fifoBufDev);
       CUDACHECKGOTO(cudaMemcpyAsync(fifoBufDev, fifoBufHost, workBytes, cudaMemcpyDefault, deviceStream), result, fail);
       cudaEvent_t memcpyDone;
       CUDACHECKGOTO(cudaEventCreateWithFlags(&memcpyDone, cudaEventDisableTiming), result, fail);

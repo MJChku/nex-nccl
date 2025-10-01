@@ -50,6 +50,7 @@ ncclResult_t getBusId(int cudaDev, int64_t *busId) {
   // higher.
   char busIdStr[] = "00000000:00:00.0";
   CUDACHECK(cudaDeviceGetPCIBusId(busIdStr, sizeof(busIdStr), cudaDev));
+  printf("getBusId: cudaDev %d busIdStr %s\n", cudaDev, busIdStr);
   NCCLCHECK(busIdToInt64(busIdStr, busId));
   return ncclSuccess;
 }
@@ -104,10 +105,17 @@ static void getHostHashOnce() {
 
   INFO(NCCL_INIT,"unique hostname '%s'", hostHash);
 
+  // [NEX] no hash
   hostHashValue = getHash(hostHash, strlen(hostHash));
+
+  int nex_id = 0;
+  const char* nex_id_str = getenv("NEX_ID");
+  if (nex_id_str) nex_id = atoi(nex_id_str);
+  hostHashValue += nex_id;
 
   INFO(NCCL_INIT,"unique host hash %lx", hostHashValue);
 }
+
 uint64_t getHostHash(void) {
   static pthread_once_t once = PTHREAD_ONCE_INIT;
   pthread_once(&once, getHostHashOnce);

@@ -486,6 +486,8 @@ ncclResult_t ncclGetSystemId(struct ncclTopoSystem* system, struct ncclXmlNode* 
   const char* hostHashStr;
   NCCLCHECK(xmlGetAttr(xmlCpu, "host_hash", &hostHashStr));
   uint64_t hostHash = hostHashStr ? strtoull(hostHashStr, NULL, 16) : 0;
+  INFO(NCCL_GRAPH, "Found host_hash %s (%lx)", hostHashStr ? hostHashStr : "NULL", hostHash);
+
   int systemId;
   for (systemId=0; systemId<system->nHosts; systemId++) if (system->hostHashes[systemId] == hostHash) break;
   if (systemId == system->nHosts) system->hostHashes[system->nHosts++] = hostHash;
@@ -1349,6 +1351,7 @@ ncclResult_t ncclTopoGetSystem(struct ncclComm* comm, struct ncclTopoSystem** sy
   // Detect only the GPU managed by this process.  We'll get any others through XML fusion.
   char busId[NVML_DEVICE_PCI_BUS_ID_BUFFER_SIZE];
   NCCLCHECKGOTO(int64ToBusId(comm->peerInfo[comm->rank].busId, busId), ret, fail);
+  printf("NCCL TOPO : Looking for local GPU rank (%d) busId %s\n", comm->rank, busId);
   NCCLCHECKGOTO(ncclTopoFillGpu(xml, busId, &node), ret, fail);
   if (node) {
     NCCLCHECKGOTO(xmlSetAttrInt(node, "keep", 1), ret, fail);
