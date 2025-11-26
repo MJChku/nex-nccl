@@ -98,6 +98,11 @@ __hidden void calibrate() {
 }
 
 __hidden double gettime(void) {
+
+  struct timespec ts;
+  clock_gettime(CLOCK_MONOTONIC, &ts);
+  return ts.tv_sec * 1000000.0 + ts.tv_nsec / 1000.0;  // return microseconds
+
   uint64_t cycles = __rdtsc();
   // printf("cycles %lu, freq %lf (Mhz) \n", cycles, freq);
   return __rdtsc() / freq;

@@ -6,6 +6,7 @@
 
 #include "network/unpack/unpack.h"
 #include "common.h"
+#include <sched.h>
 #include <cassert>
 
 enum primsMode {
@@ -116,9 +117,11 @@ class Primitives<
       while (connStepCache + (isSendNotRecv ? NCCL_STEPS : 0) < step + StepPerSlice) {
         connStepCache = loadStepValue(connStepPtr);
         if (checkAbort(flags, Aborted, spins)) break;
+        syncwall();
         //if (spins == 0) printf("r=%d b=%d t=%d SPUN OUT got=%d want=%d\n", ncclShmem->comm.rank, blockIdx.x, threadIdx.x, int(connStepCache + (isSendNotRecv ? NCCL_STEPS : 0)), int(step+StepPerSlice));
       }
     }
+
 
     if (flags & (Recv*RoleWaitRecv | Send*RoleWaitSend)) {
       if ((flags & ConnFifoEnabled) && (flags & (Send * RoleWaitSend)))
@@ -172,6 +175,8 @@ class Primitives<
 
   template<int Recv, int Send>
   inline __device__ void postPeer(bool dataStored) {
+    
+    syncwall();
     if (flags & (Recv*RolePostRecv | Send*RolePostSend)) {
       step += StepPerSlice;
       if (Send && (flags & RolePostSend) && (dataStored||(flags&ConnFifoEnabled))) {
@@ -338,6 +343,7 @@ public:
     while (ld_volatile_global(peerPtr->recv[connIndex].tail) < peerPtr->recv[connIndex].step) {
       int abort = 0;
       if (checkAbort(abort, 1, spins)) break;
+      explicit_yield();
     }
   }
 
@@ -725,7 +731,10 @@ private:
       uint64_t prevStep = step - StepPerSlice;
       volatile ssize_t* ptr = &(connFifo[prevStep%NCCL_STEPS].size);
       int spins = 0;
-      while (*ptr != -1) if (checkAbort(flags, Aborted, spins)) break;
+      while (*ptr != -1) {
+        if (checkAbort(flags, Aborted, spins)) break;
+        explicit_yield();
+      }
     }
 
     if (flags & NetDeviceUnpack) {
@@ -743,7 +752,10 @@ private:
       int spins = 0;
       volatile uint64_t* tail = conn->tail;
       volatile uint64_t* head = conn->head;
-      while (*tail > *head) if (checkAbort(flags, Aborted, spins)) break;
+      while (*tail > *head) {
+        if (checkAbort(flags, Aborted, spins)) break;
+        explicit_yield();
+      }
     }
   }
 
@@ -996,6 +1008,7 @@ private:
       while (peer->stepCache < step + StepPerSlice) {
         peer->stepCache = loadStepValue(peer->tailPtr);
         if (checkAbort(flags, Aborted, spins)) break;
+        syncwall();
       }
     }
     if (send && (flags & RoleWaitSend)) {
@@ -1003,6 +1016,7 @@ private:
       while (peer->stepCache + NCCL_STEPS < step + ps->stepOffset + StepPerSlice) {
         peer->stepCache = loadStepValue(peer->headPtr);
         if (checkAbort(flags, Aborted, spins)) break;
+        syncwall();
       }
       ncclShmem->groups[group].dsts[0] = ((T*)peer->buff) + ((step+ps->stepOffset)%NCCL_STEPS)*peer->connStepSize + ps->sendOffset;
       if (peer->accSize < ps->sendOffset + nelem + (step+ps->stepOffset)*peer->connStepSize) {
@@ -1092,6 +1106,7 @@ private:
       while (peer->stepCache < step + ps->stepOffset + StepPerSlice) {
         peer->stepCache = loadStepValue(peer->tailPtr);
         if (checkAbort(flags, Aborted, spins)) break;
+        syncwall();
       }
       if (peer->accSize < ps->recvOffset + nelem + (step+ps->stepOffset)*peer->connStepSize) {
         // New data, copy to our output buffer.
@@ -1105,6 +1120,7 @@ private:
       while (peer->stepCache + NCCL_STEPS < step + StepPerSlice) {
         peer->stepCache = loadStepValue(peer->headPtr);
         if (checkAbort(flags, Aborted, spins)) break;
+        syncwall();
       }
       ncclShmem->groups[group].dsts[0] = ((T*)peer->buff) + (step%NCCL_STEPS)*peer->connStepSize + ps->sendOffset;
     }

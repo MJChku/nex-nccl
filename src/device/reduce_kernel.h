@@ -429,18 +429,35 @@ __host__ __device__ inline T ncclReduceScalar(Fn, T current, T value) {
   return value;
 }
 
+#define SKIP_COMP
+
 template<typename T>
 __host__ __device__ inline T ncclReduceScalar(FuncCopy<T>, T current, T) { return current; }
 template<typename T>
 __host__ __device__ inline T ncclReduceScalar(FuncSum<T>, T current, T value) {
+  // Skip reduction computation - return current (first value wins)
+#ifdef SKIP_COMP
+  return current; 
+#endif 
+
   return ncclAdd(current, value);
 }
 template<typename T>
 __host__ __device__ inline T ncclReduceScalar(FuncProd<T>, T current, T value) {
+  // Skip reduction computation - return current (first value wins)
+#ifdef SKIP_COMP
+  return current; 
+#endif 
+
   return ncclMultiply(current, value);
 }
 template<typename T>
 __host__ __device__ inline T ncclReduceScalar(FuncMinMax<T> fn, T current, T value) {
+  // Skip reduction computation - return current (first value wins)
+#ifdef SKIP_COMP
+  return current; 
+#endif 
+
   if constexpr (std::is_same_v<T, __half>
 #if defined(__CUDA_BF16_TYPES_EXIST__)
                 || std::is_same_v<T, __nv_bfloat16>
@@ -461,10 +478,20 @@ __host__ __device__ inline T ncclReduceScalar(FuncMinMax<T> fn, T current, T val
 }
 template<typename T>
 __host__ __device__ inline T ncclReduceScalar(FuncPreMulSum<T>, T current, T value) {
+  // Skip reduction computation - return current (first value wins)
+#ifdef SKIP_COMP
+  return current; 
+#endif 
+
   return ncclAdd(current, value);
 }
 template<typename T>
 __host__ __device__ inline T ncclReduceScalar(FuncSumPostDiv<T>, T current, T value) {
+  // Skip reduction computation - return current (first value wins)
+#ifdef SKIP_COMP
+  return current; 
+#endif 
+
   return ncclAdd(current, value);
 }
 
@@ -473,6 +500,11 @@ struct Apply_PreOp<FuncPreMulSum<T>, EltPerPack> {
   static constexpr bool IsIdentity = false;
   __host__ __device__ static BytePack<EltPerPack*sizeof(T)>
   preOp(FuncPreMulSum<T> fn, BytePack<EltPerPack*sizeof(T)> in) {
+    // skip
+#ifdef SKIP_COMP
+    return in;
+#endif 
+
     T vals[EltPerPack];
     std::memcpy(vals, in.u8, sizeof(vals));
     T factor = ncclDecodeScalar<T>(fn.raw);
@@ -490,6 +522,11 @@ struct Apply_PostOp<FuncSumPostDiv<T>, EltPerPack> {
   static constexpr bool IsIdentity = false;
   __host__ __device__ static BytePack<EltPerPack*sizeof(T)>
   postOp(FuncSumPostDiv<T> fn, BytePack<EltPerPack*sizeof(T)> in) {
+    // Skip
+#ifdef SKIP_COMP
+    return in;
+#endif 
+
     T vals[EltPerPack];
     std::memcpy(vals, in.u8, sizeof(vals));
     for (int i = 0; i < EltPerPack; ++i) {
@@ -516,6 +553,11 @@ applyCast(PackA pack) {
 
 template<typename Fn, typename Pack>
 __host__ __device__ inline Pack applyReduce(Fn fn, Pack a, Pack b) {
+  // skip
+#ifdef SKIP_COMP
+  return a;
+#endif 
+
   constexpr int elt = BytePackOf<Pack>::Size/sizeof(typename Fn::EltType);
   auto aPack = toPack(a);
   auto bPack = toPack(b);
@@ -525,6 +567,11 @@ __host__ __device__ inline Pack applyReduce(Fn fn, Pack a, Pack b) {
 
 template<typename Fn, typename Pack>
 __host__ __device__ inline Pack applyPreOp(Fn fn, Pack a) {
+  // skip
+#ifdef SKIP_COMP
+  return a;
+#endif
+
   constexpr int elt = BytePackOf<Pack>::Size/sizeof(typename Fn::EltType);
   auto packValue = toPack(a);
   auto result = Apply_PreOp<Fn, elt>::preOp(fn, packValue);
@@ -533,6 +580,11 @@ __host__ __device__ inline Pack applyPreOp(Fn fn, Pack a) {
 
 template<typename Fn, typename Pack>
 __host__ __device__ inline Pack applyPostOp(Fn fn, Pack a) {
+   // skip
+#ifdef SKIP_COMP
+  return a;
+#endif
+
   constexpr int elt = BytePackOf<Pack>::Size/sizeof(typename Fn::EltType);
   auto packValue = toPack(a);
   auto result = Apply_PostOp<Fn, elt>::postOp(fn, packValue);

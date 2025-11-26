@@ -18,6 +18,9 @@
 
 #include <cuda_runtime.h>
 
+extern float compressT_extreme();
+extern void compressT(float ratio);
+
 // Define min for ssize_t
 inline __device__ int min(int a, ssize_t b) { return (a < b) ? a : b; }
 
@@ -131,7 +134,7 @@ using Scalar = T;
 
     // minSrcs[0] cannot be nullptr so we always process it
     { RedFn preFn(0 < PreOpSrcs ? preOpArgs[0] : 0);
-      #pragma unroll Unroll
+      // #pragma unroll Unroll
       for (int u=0; u < Unroll; u++) {
         if (0 < MultimemSrcs) {
           // applyLoadMultimem uses relaxed semantics for same reason we use volatile below.
@@ -145,14 +148,14 @@ using Scalar = T;
       }
     }
 
-    #pragma unroll (MinSrcs-1 + !(MinSrcs-1))
+    // #pragma unroll (MinSrcs-1 + !(MinSrcs-1))
     for (int s=1; s < MinSrcs; s++) {
       // Yes, for some template arguments this code will be unreachable.  That's fine.
       // coverity[dead_error_begin]
       BytePack<BytePerPack> tmp[Unroll];
       // coverity[dead_error_line]
       RedFn preFn(s < PreOpSrcs ? preOpArgs[s] : 0);
-      #pragma unroll Unroll
+      // #pragma unroll Unroll
       for (int u=0; u < Unroll; u++) {
         if (s < MultimemSrcs) {
           // applyLoadMultimem uses relaxed semantics for same reason we use volatile below.
@@ -164,7 +167,7 @@ using Scalar = T;
         }
         minSrcs[s] += WARP_SIZE*BytePerPack;
       }
-      #pragma unroll Unroll
+      // #pragma unroll Unroll
       for (int u=0; u < Unroll; u++) {
         // coverity[dead_error_line]
         if (s < PreOpSrcs) tmp[u] = applyPreOp(preFn, tmp[u]);
@@ -178,13 +181,13 @@ using Scalar = T;
       // Yes, for some template arguments this code will be unreachable.  That's fine.
       // coverity[dead_error_line]
       RedFn preFn(s < PreOpSrcs ? preOpArgs[s] : 0);
-      #pragma unroll Unroll
+      // #pragma unroll Unroll
       for (int u=0; u < Unroll; u++) {
         // Use volatile loads in case credits are polled for with volatile (instead of acquire).
         tmp[u] = ld_volatile_global<BytePerPack>(src);
         src += WARP_SIZE*BytePerPack;
       }
-      #pragma unroll Unroll
+      // #pragma unroll Unroll
       for (int u=0; u < Unroll; u++) {
         // Yes, for some template arguments this code will be unreachable.  That's fine.
         // coverity[dead_error_line]
@@ -264,6 +267,7 @@ __device__ __forceinline__ void reduceCopy(
     int nSrcs, SrcPtrFn const &srcPtrFn, int nDsts, DstPtrFn const &dstPtrFn,
     IntBytes nElts
   ) {
+
   static_assert(MultimemSrcs <= MinSrcs && MultimemDsts <= MinDsts, "Multimem pointers cannot exceed respective Min values.");
   //int nWarps = nThreads/WARP_SIZE;
   //int warp = thread/WARP_SIZE;
@@ -325,12 +329,14 @@ __device__ __forceinline__ void reduceCopy(
     int nSrcs, void** srcPtrs, int nDsts, void** dstPtrs,
     IntBytes nElts
   ) {
+
   reduceCopy<Unroll, RedFn, T,
              MultimemSrcs, MinSrcs, MaxSrcs,
              MultimemDsts, MinDsts, MaxDsts, PreOpSrcs, IntBytes>
     (thread, nThreads, redArg, preOpArgs, postOp,
      nSrcs, [=]__device__(int i) { return srcPtrs[i]; },
      nDsts, [=]__device__(int i) { return dstPtrs[i]; }, nElts);
+
 }
 
 #endif // COMMON_KERNEL_H_

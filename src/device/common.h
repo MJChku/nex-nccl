@@ -63,7 +63,10 @@ extern unsigned __ballot_sync(unsigned, int);
 extern void __threadfence_block();
 extern void __threadfence_system();
 extern void __threadfence();
+extern void explicit_yield();
 
+// artificially introduced functions
+extern void syncwall();
 
 inline void __trap(){assert(0);};
 inline int __popc(uint x){return __builtin_popcount(x);}
