@@ -239,6 +239,8 @@ ncclResult_t ncclStrongStreamAcquire(
       // Bring captureStream into the graph but without any dependencies.
       cudaEvent_t scratch;
       CUDACHECK(cudaEventCreateWithFlags(&scratch, cudaEventDisableTiming));
+      fprintf(stderr, "ncclStrongStreamAcquire: recording scratch event %p on graph.origin %p\n", scratch, graph.origin);
+      fflush(stderr);
       CUDACHECK(cudaEventRecord(scratch, graph.origin));
       CUDACHECK(cudaStreamWaitEvent(cap->captureStream, scratch, 0));
       CUDACHECK(cudaEventDestroy(scratch));
@@ -288,6 +290,8 @@ ncclResult_t ncclStrongStreamRelease(
     if (mixing) {
       if (graph.graphId == ULLONG_MAX) {
         if (__atomic_load_n(&ss->everCaptured, __ATOMIC_RELAXED)) {
+          fprintf(stderr, "ncclStrongStreamRelease: recording serialEvent on liveStream %p\n", ss->liveStream);
+          fflush(stderr);
           CUDACHECK(cudaEventRecord(ss->serialEvent, ss->liveStream));
         }
         if (ss->liveAcquiredBy != localThreadId() && ncclParamLaunchRaceFatal()) {
@@ -357,6 +361,8 @@ ncclResult_t ncclStrongStreamRelease(
 }
 
 ncclResult_t ncclStreamWaitStream(cudaStream_t a, cudaStream_t b, cudaEvent_t scratchEvent) {
+  fprintf(stderr, "ncclStreamWaitStream: stream %p waiting for stream %p using scratch event %p\n", a, b, scratchEvent);
+  fflush(stderr);
   CUDACHECK(cudaEventRecord(scratchEvent, b));
   CUDACHECK(cudaStreamWaitEvent(a, scratchEvent, 0));
   return ncclSuccess;

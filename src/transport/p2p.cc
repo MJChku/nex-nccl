@@ -778,12 +778,15 @@ static ncclResult_t p2pSendProxyProgress(struct ncclProxyState* proxyState, stru
         if ((*recvTail > sub->base+sub->transmitted)) {
           int size = connFifo[buffSlot].size;
           CUDACHECK(cudaMemcpyAsync(resources->recvFifo+buffSlot*stepSize, resources->ceDevBuff+buffSlot*stepSize, size, cudaMemcpyDeviceToDevice, resources->stream));
+          fprintf(stderr, "p2pSendProxyProgress cudaMemcpyAsync buffSlot %d base %d transmitted %d size %d\n", buffSlot, sub->base, sub->transmitted, size);
+          fflush(stderr);
           CUDACHECK(cudaEventRecord(resources->events[buffSlot], resources->stream));
           sub->transmitted += args->sliceSteps;
         }
       }
       if (sub->done < sub->transmitted) {
         int buffSlot = (sub->base+sub->done)%NCCL_STEPS;
+        INFO(NCCL_PROXY, "p2pSendProxyProgress cudaEventQuery");
         cudaError_t res = cudaEventQuery(resources->events[buffSlot]);
         if (res != cudaErrorNotReady) CUDACHECK(res);
         if (res == cudaSuccess) {
@@ -924,8 +927,11 @@ ncclResult_t ret = ncclSuccess;
           NCCLCHECKGOTO(ncclStrongStreamAcquire(ncclCudaGraphNone(), &comm->sharedRes->deviceStream, /*concurrent=*/false, &deviceStream), ret, fail);
           if (regRecord->regIpcAddrs.devPeerRmtAddrs == NULL)
             NCCLCHECKGOTO(ncclCudaCallocAsync(&regRecord->regIpcAddrs.devPeerRmtAddrs, comm->localRanks, hostStream), ret, fail);
-          if (needUpdate)
+          if (needUpdate){
+            fprintf(stderr, "ipcRegisterBuffer rank %d updating devPeerRmtAddrs\n", comm->rank);
+            fflush(stderr);
             NCCLCHECKGOTO(ncclCudaMemcpyAsync(regRecord->regIpcAddrs.devPeerRmtAddrs, regRecord->regIpcAddrs.hostPeerRmtAddrs, comm->localRanks, hostStream), ret, fail);
+          }
           NCCLCHECKGOTO(ncclStreamWaitStream(deviceStream, hostStream, comm->sharedRes->scratchEvent), ret, fail);
           NCCLCHECKGOTO(ncclStrongStreamRelease(ncclCudaGraphNone(), &comm->sharedRes->hostStream, /*concurrent=*/false), ret, fail);
           NCCLCHECKGOTO(ncclStrongStreamRelease(ncclCudaGraphNone(), &comm->sharedRes->deviceStream, /*concurrent=*/false), ret, fail);

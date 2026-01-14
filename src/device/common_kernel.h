@@ -127,6 +127,15 @@ using Scalar = T;
     minDsts[d] = cvta_to_global(dstPtrFn(d)) + threadBytesBehind;
   }
 
+  // if (thread == 0) {
+  //   printf("reduceCopyPacks debug: nSrcs %d nDsts %d threadBytesBehind %lld threadBytesAhead %lld nBytesBehind %lld nBytesAhead %lld firstSrc %p firstDst %p\n",
+  //          nSrcs, nDsts,
+  //          (long long)threadBytesBehind, (long long)threadBytesAhead,
+  //          (long long)nBytesBehind, (long long)nBytesAhead,
+  //          (MinSrcs > 0) ? (void*)minSrcs[0] : nullptr,
+  //          (MinDsts > 0) ? (void*)minDsts[0] : nullptr);
+  // }
+
   // We dictate loop termination condition according to whether partial hunks
   // can be handled or not.
   while (Unroll==1 ? (BytePerPack <= threadBytesAhead) : (0 < nHunksAhead)) {

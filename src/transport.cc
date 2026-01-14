@@ -203,6 +203,7 @@ ncclResult_t ncclTransportP2pSetup(struct ncclComm* comm, struct ncclTopoGraph* 
                 if (ret == ncclSuccess) {
                   conn->connected = 1;
                   /* comm->channels[c].devPeers[sendPeer]->send[connIndex] is a device memory access. */
+                  fprintf(stderr, "cudaMemcpyAsync to devPeersHostPtr for rank %d channel %d sendPeer %d\n", comm->rank, c, sendPeer);
                   CUDACHECKGOTO(cudaMemcpyAsync(&comm->channels[c].devPeersHostPtr[sendPeer]->send[connIndex], &conn->conn, sizeof(struct ncclConnInfo), cudaMemcpyHostToDevice, hostStream), ret, fail);
                 } else if (ret == ncclInProgress) {
                   allChannelsConnected = false;
@@ -222,6 +223,7 @@ ncclResult_t ncclTransportP2pSetup(struct ncclComm* comm, struct ncclTopoGraph* 
                 if (ret == ncclSuccess) {
                   conn->connected = 1;
                   /* comm->channels[c].devPeers[recvPeer]->recv[connIndex] is a device memory access. */
+                  fprintf(stderr, "cudaMemcpyAsync to devPeersHostPtr for rank %d channel %d recvPeer %d, hoststream %p\n", comm->rank, c, recvPeer, hostStream);
                   CUDACHECKGOTO(cudaMemcpyAsync(&comm->channels[c].devPeersHostPtr[recvPeer]->recv[connIndex], &conn->conn, sizeof(struct ncclConnInfo), cudaMemcpyHostToDevice, hostStream), ret, fail);
                 } else if (ret == ncclInProgress) {
                   allChannelsConnected = false;

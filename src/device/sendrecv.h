@@ -19,6 +19,11 @@ struct RunWorkBatch<ncclFuncSendRecv, T, RedOp, NCCL_ALGO_RING, NCCL_PROTO_SIMPL
     int chunkSize = useLargeChunk ? NCCL_MAX_NET_SIZE : u32fp8Decode(work->sendChunkSize_u32fp8);
     int stepSize = useLargeChunk ? NCCL_MAX_NET_SIZE : ncclShmem->comm.p2pChunkSize;
     // LOG(LOG_DEBUG, "runSend P2p send bytes %zu chunkSize %d stepSize %d", bytes, chunkSize, stepSize);
+    // if (tid == 0 && blockIdx().x == 0 && blockIdx().y == 0 && blockIdx().z == 0) {
+      // printf("runSend channel %d work %p sendAddr %p bytes %zu chunkSize %d stepSize %d protoLL %d netReg %d ipcReg %d\n",
+      //        ncclShmem->channelId, work, work->sendAddr, bytes, chunkSize, stepSize,
+      //        work->sendProtoLL, work->sendNetReg, work->sendIpcReg);
+    // }
     Primitives<T, RedOp, FanAsymmetric<0, 1>, 1, Proto, 1>
       prims(tid, tn, nullptr, &work->sendRank, work->sendAddr, nullptr,
             /*redOpArg(ignored)=*/0, group, 1, 1, nullptr, work, stepSize);
@@ -37,6 +42,13 @@ struct RunWorkBatch<ncclFuncSendRecv, T, RedOp, NCCL_ALGO_RING, NCCL_PROTO_SIMPL
     int chunkSize = useLargeChunk ? NCCL_MAX_NET_SIZE : u32fp8Decode(work->recvChunkSize_u32fp8);
     int stepSize = useLargeChunk ? NCCL_MAX_NET_SIZE : ncclShmem->comm.p2pChunkSize;
     // LOG(LOG_DEBUG, "runRecv P2p recv bytes %zu chunkSize %d stepSize %d", bytes, chunkSize, stepSize);
+
+    // if (tid == 0 && blockIdx().x == 0 && blockIdx().y == 0 && blockIdx().z == 0) {
+    //   printf("runRecv channel %d work %p recvAddr %p bytes %zu chunkSize %d stepSize %d protoLL %d netReg %d ipcReg %d\n",
+    //          ncclShmem->channelId, work, work->recvAddr, bytes, chunkSize, stepSize,
+    //          work->recvProtoLL, work->recvNetReg, work->recvIpcReg);
+    // }
+    
     Primitives<T, RedOp, FanAsymmetric<1, 0>, 1, Proto, 1>
       prims(tid, tn, &work->recvRank, nullptr, nullptr, work->recvAddr,
             /*redOpArg(ignored)=*/0, group, 1, 1, nullptr, work, stepSize);

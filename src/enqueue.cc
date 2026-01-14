@@ -834,8 +834,16 @@ static ncclResult_t addP2pToPlan(
       struct ncclChannelPeer** channelPeers = comm->channels[channelId].peers;
       for (int dir=0; dir <= 1; dir++) {
         int peerRank = dir ? sendRank : recvRank;
-        struct ncclConnector* conn = dir ? &channelPeers[peerRank]->send[connIndex]
-                                         : &channelPeers[peerRank]->recv[connIndex];
+        struct ncclChannelPeer* peer = channelPeers[peerRank];
+        if (peer == nullptr) {
+          WARN("P2P channel %d dir %d peer %d has no connector (channelPeers[%d] == NULL)", channelId, dir, peerRank, peerRank);
+          continue;
+        }
+        struct ncclConnector* conn = dir ? &peer->send[connIndex]
+                                         : &peer->recv[connIndex];
+        INFO(NCCL_P2P, "P2P connector check: channel %d dir %d peer %d conn %p buffSimple %p buffLL %p flags 0x%x transport %p",
+             channelId, dir, peerRank, conn, conn->conn.buffs[NCCL_PROTO_SIMPLE],
+             conn->conn.buffs[NCCL_PROTO_LL], conn->conn.flags, conn->transportComm);
         protoLL[dir] &= conn->conn.buffs[NCCL_PROTO_LL] != nullptr;
         network[dir] |= conn->transportComm == (dir ? &netTransport.send : &netTransport.recv);
         proxySameProcess[dir] &= conn->proxyConn.sameProcess;
@@ -956,6 +964,13 @@ static ncclResult_t addP2pToPlan(
   work->recvAddr = recvAddr;
   work->recvBytes = recvBytes==-1 ? 0 : recvBytes;
   work->profilerEnabled = ncclProfilerPluginLoaded() && ((p2pTasks[0] ? p2pTasks[0] : p2pTasks[1])->eActivationMask & ncclProfileKernelCh);
+
+  INFO(NCCL_P2P, "addP2pToPlan round %d sendRank %d recvRank %d sendAddr %p recvAddr %p sendBytes %zi recvBytes %zi sendChannels %d recvChannels %d sendProto %s recvProto %s sendNetReg %d recvNetReg %d sendIpcReg %d recvIpcReg %d, network %s",
+      p2pRound, sendRank, recvRank, sendAddr, recvAddr, work->sendBytes, work->recvBytes,
+      work->nSendChannels, work->nRecvChannels,
+      work->sendProtoLL ? "LL" : "Simple", work->recvProtoLL ? "LL" : "Simple",
+      work->sendNetReg, work->recvNetReg, work->sendIpcReg, work->recvIpcReg,
+      network[0] || network[1] ? "(network)" : "(intra-node)");
 
   struct ncclProxyOp proxyOps[2] = {};
   int nProxyOps = selfSend ? 0 : 2;
@@ -1224,7 +1239,11 @@ static ncclResult_t uploadWork(struct ncclComm* comm, struct ncclKernelPlan* pla
     if (comm->workFifoBufGdrHandle != nullptr) wc_store_fence();
     break;
   case ncclDevWorkStorageTypePersistent:
-    { ncclResult_t result = ncclSuccess;
+    { 
+      fprintf(stderr, "DONT SUPPORT: NCCL INFO Uploading %ld bytes of persistent work buffer\n", (long)workBytes);
+      fflush(stderr);
+      exit(1);
+      ncclResult_t result = ncclSuccess;
       struct uploadWork_cleanup_t* cleanup = nullptr;
       cudaStreamCaptureMode mode = cudaStreamCaptureModeRelaxed;
       void* fifoBufDev = nullptr;
@@ -1499,6 +1518,8 @@ ncclResult_t ncclLaunchPrepare(struct ncclComm* comm) {
 
     // userStream[0] waits on each userStream[i]...
     for (struct ncclCudaStreamList* l=planner->streams->next; l != nullptr; l = l->next) {
+      fprintf(stderr, "NCCL INFO ncclLaunchPrepare: userStream[0] waiting on userStream %p\n",  l->stream);
+      fflush(stderr);
       CUDACHECKGOTO(cudaEventRecord(comm->sharedRes->scratchEvent, l->stream), result, failure);
       CUDACHECKGOTO(cudaStreamWaitEvent(launchStream, comm->sharedRes->scratchEvent, 0), result, failure);
     }
@@ -1711,6 +1732,8 @@ ncclResult_t ncclLaunchFinish(struct ncclComm* comm) {
     cudaStream_t launchStream = planner->streams->stream; // First user stream gets launch
     cudaStream_t deviceStream, launchOrder;
     cudaEvent_t finishedEvent = comm->sharedRes->scratchEvent;
+    fprintf(stderr, "NCCL INFO ncclLaunchFinish: recording finishedEvent %p on launchStream %p\n", finishedEvent, launchStream);
+    fflush(stderr);
     CUDACHECK(cudaEventRecord(finishedEvent, launchStream));
 
     if (comm->workFifoProduced - comm->workFifoProducedLastRecorded > comm->workFifoBytes/8) {
