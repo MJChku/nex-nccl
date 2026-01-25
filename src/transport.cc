@@ -5,7 +5,6 @@
  ************************************************************************/
 
 #include "comm.h"
-#include "include/debug.h"
 #include "info.h"
 #include "bootstrap.h"
 #define ENABLE_TIMER 0
@@ -22,7 +21,6 @@ struct ncclTransport* ncclTransports[NTRANSPORTS+1] = {
 
 template <int type>
 static ncclResult_t selectTransport(struct ncclComm* comm, struct ncclTopoGraph* graph, struct ncclConnect* connect, int channelId, int peer, int connIndex, int* transportType) {
-  INFO(NCCL_INIT, "selectTransport(comm %p, graph %p, connect %p, channelId %d, peer %d, connIndex %d, type %s)", comm, graph, connect, channelId, peer, connIndex, (type == 1) ? "send" : "recv");
   struct ncclPeerInfo* myInfo = comm->peerInfo+comm->rank;
   struct ncclPeerInfo* peerInfo = comm->peerInfo+peer;
   struct ncclConnector* connector = (type == 1) ? comm->channels[channelId].peers[peer]->send + connIndex :
@@ -32,12 +30,10 @@ static ncclResult_t selectTransport(struct ncclComm* comm, struct ncclTopoGraph*
     struct ncclTransportComm* transportComm = type == 1 ? &transport->send : &transport->recv;
     int ret = 0;
     NCCLCHECK(transport->canConnect(&ret, comm, graph, myInfo, peerInfo));
-    INFO(NCCL_INIT, "Transport %s canConnect %d for rank %d[%lx] -> rank %d[%lx]", transport->name, ret, myInfo->rank, myInfo->busId, peerInfo->rank, peerInfo->busId);
     if (ret) {
       connector->transportComm = transportComm;
       NCCLCHECK(transportComm->setup(comm, graph, myInfo, peerInfo, connect, connector, channelId, connIndex));
       if (transportType) *transportType = t;
-      INFO(NCCL_INIT, "Transport %s selected for rank %d[%lx] -> rank %d[%lx] type(%d)", transport->name, myInfo->rank, myInfo->busId, peerInfo->rank, peerInfo->busId, t);
       return ncclSuccess;
     }
   }
@@ -46,7 +42,7 @@ static ncclResult_t selectTransport(struct ncclComm* comm, struct ncclTopoGraph*
 }
 
 ncclResult_t ncclTransportP2pConnect(struct ncclComm* comm, int channelId, int nrecv, int* peerRecv, int nsend, int* peerSend, int connIndex) {
-  INFO(NCCL_INIT, "nsend %d nrecv %d", nsend, nrecv);
+  TRACE(NCCL_INIT, "nsend %d nrecv %d", nsend, nrecv);
   struct ncclChannel* channel = &comm->channels[channelId];
   uint64_t mask = 1UL << channel->id;
   for (int i=0; i<nrecv; i++) {
@@ -203,7 +199,6 @@ ncclResult_t ncclTransportP2pSetup(struct ncclComm* comm, struct ncclTopoGraph* 
                 if (ret == ncclSuccess) {
                   conn->connected = 1;
                   /* comm->channels[c].devPeers[sendPeer]->send[connIndex] is a device memory access. */
-                  fprintf(stderr, "cudaMemcpyAsync to devPeersHostPtr for rank %d channel %d sendPeer %d\n", comm->rank, c, sendPeer);
                   CUDACHECKGOTO(cudaMemcpyAsync(&comm->channels[c].devPeersHostPtr[sendPeer]->send[connIndex], &conn->conn, sizeof(struct ncclConnInfo), cudaMemcpyHostToDevice, hostStream), ret, fail);
                 } else if (ret == ncclInProgress) {
                   allChannelsConnected = false;
@@ -223,7 +218,6 @@ ncclResult_t ncclTransportP2pSetup(struct ncclComm* comm, struct ncclTopoGraph* 
                 if (ret == ncclSuccess) {
                   conn->connected = 1;
                   /* comm->channels[c].devPeers[recvPeer]->recv[connIndex] is a device memory access. */
-                  fprintf(stderr, "cudaMemcpyAsync to devPeersHostPtr for rank %d channel %d recvPeer %d, hoststream %p\n", comm->rank, c, recvPeer, hostStream);
                   CUDACHECKGOTO(cudaMemcpyAsync(&comm->channels[c].devPeersHostPtr[recvPeer]->recv[connIndex], &conn->conn, sizeof(struct ncclConnInfo), cudaMemcpyHostToDevice, hostStream), ret, fail);
                 } else if (ret == ncclInProgress) {
                   allChannelsConnected = false;
@@ -320,7 +314,7 @@ bool ncclTransportCollNetSetup(struct ncclComm* comm, struct ncclTopoGraph* coll
   peerInfo->rank = nranks;
 
   if (isMaster && type == collNetSend) {
-    INFO(NCCL_INIT, "CollNet [send] : rank %d collNetRank %d collNetNranks %d received connect from rank %d", rank, comm->node, nMasters, masterPeer);
+    TRACE(NCCL_INIT, "CollNet [send] : rank %d collNetRank %d collNetNranks %d received connect from rank %d", rank, comm->node, nMasters, masterPeer);
   }
 
   // select
@@ -368,7 +362,7 @@ bool ncclTransportCollNetSetup(struct ncclComm* comm, struct ncclTopoGraph* coll
   }
   if (isMaster && type == collNetRecv) {
     memcpy(connect, masterConnects+comm->node, sizeof(struct ncclConnect));
-    INFO(NCCL_INIT, "CollNet [recv] : rank %d collNetRank %d collNetNranks %d sent connect to rank %d", rank, comm->node, nMasters, masterPeer);
+    TRACE(NCCL_INIT, "CollNet [recv] : rank %d collNetRank %d collNetNranks %d sent connect to rank %d", rank, comm->node, nMasters, masterPeer);
   }
 cleanup:
   if (allConnects != NULL) free(allConnects);

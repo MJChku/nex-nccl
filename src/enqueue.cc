@@ -11,13 +11,10 @@
 #include "bootstrap.h"
 #include "channel.h"
 #include "cudawrap.h"
-#include "include/debug.h"
-#include "include/nccl_common.h"
 #include "profiler.h"
 #include "transport.h"
 #include "register_inline.h"
 
-#include <cstdint>
 #include <cstring> // std::memcpy
 #include <cinttypes> // PRIx64
 #include <cassert>
@@ -59,7 +56,7 @@ ncclResult_t ncclInitKernelsForDevice(int cudaArch, int maxSharedMem, size_t* ma
         if (sharedMemSize > (maxSharedMem-attr.sharedSizeBytes)) {
           WARN("cudaArch %d ncclMaxSharedMem %d exceeds device/fn maxSharedMem %zu",
                cudaArch, sharedMemSize, maxSharedMem-attr.sharedSizeBytes);
-          // return ncclSystemError;
+          //return ncclSystemError;
         }
         CUDACHECKGOTO(cudaFuncSetAttribute(fn,
           cudaFuncAttributeMaxDynamicSharedMemorySize, sharedMemSize),
@@ -140,8 +137,6 @@ static void addWorkBatchToPlan(
     batch = &batchNode->batch;
     batch->nextExtends = 0;
     batch->workType = (uint32_t)workType;
-    INFO(NCCL_INIT, "addWorkBatchToPlan: channelId %d,devFuncId %d, batch ptr %p",
-         channelId, devFuncId, batch);
     batch->funcId = devFuncId;
     batch->offsetBase = workOffset;
     batch->offsetBitset = 0;
@@ -165,9 +160,6 @@ static void addWorkBatchToPlan(
     // of the same round since they would use the same connections.
     chan->wipBatch.p2pRounds[chan->wipBatch.nP2ps++] = p2pRound;
   }
-
-  INFO(NCCL_INIT, "addWorkBatchToPlan: channelId %d, workType %d, funcId %d, workOffset %u, offset %u, offsetBitset 0x%016" PRIx64,
-       channelId, workType, devFuncId, workOffset, offset, batch->offsetBitset);
 }
 
 static void finishPlan(struct ncclComm* comm, struct ncclKernelPlan* plan) {
@@ -186,7 +178,6 @@ static void finishPlan(struct ncclComm* comm, struct ncclKernelPlan* plan) {
   plan->kernelArgsSize = alignUp(plan->kernelArgsSize, 16);
   plan->kernelArgs = (struct ncclDevKernelArgs*)ncclMemoryStackAlloc(&comm->memScoped, plan->kernelArgsSize, /*align=*/16);
   plan->kernelArgs->comm = comm->devComm;
-  INFO(NCCL_INIT, "kernelArgs %p, plan->kernelArgs->comm: comm->devComm %p, workbuf %p\n", plan->kernelArgs, comm->devComm, plan->kernelArgs->workBuf);
   plan->kernelArgs->channelMask = plan->channelMask;
   plan->kernelArgs->workStorageType = plan->workStorageType;
 
@@ -208,9 +199,6 @@ static void finishPlan(struct ncclComm* comm, struct ncclKernelPlan* plan) {
         }
         batchPrev[c] = &batchZero[batchIx];
         batchZero[batchIx++] = batchNode->batch;
-        INFO(NCCL_INIT, "batchZero %p, batchZero[%d] %p, channelId %d, workType %d, funcId %d",
-             batchZero, batchIx-1, &batchZero[batchIx-1], c, batchZero[batchIx-1].workType,
-             batchZero[batchIx-1].funcId);
       }
       if (ncclIntruQueueEmpty(&wipChannels[c].workBatchQueue)) {
         hasBatchMask ^= 1ull<<c;
@@ -303,8 +291,6 @@ ncclResult_t ncclTasksRegAndEnqueue(struct ncclComm* comm) {
     devWork.recvbuffRmtAddrs = task->recvbuffRmtAddrs;
     devWork.root = task->root;
     devWork.nWarps = task->nWarps;
-    INFO(NCCL_INIT, "ncclTasksRegAndEnqueue: task %p, sendbuff %p, recvbuff %p, nWarps %d",
-         task, devWork.sendbuff, devWork.recvbuff, devWork.nWarps);
     devWork.redOpArg = task->opDev.scalarArg;
     devWork.redOpArgIsPtr = task->opDev.scalarArgIsPtr;
     devWork.oneNode = (comm->nNodes == 1);
@@ -367,10 +353,8 @@ ncclResult_t ncclPrepareTasks(struct ncclComm* comm, bool* algoNeedConnect, bool
       enum ncclSymKernelId kernel;
       int nChannels, nWarps;
       float estTimeUs = 1.e18;
-
       NCCLCHECK(ncclSymPickKernel(comm, task->func, task->opDev.op, task->datatype, task->count, &estTimeUs, &kernel, &nChannels, &nWarps));
 
-      INFO(NCCL_INIT, "====!!!==== Using symmetric kernel, nwarps %d", nWarps);
       // We should only use symmetric kernel if it beats the asymmetric kernel. But the
       // perf model accuracy from asymmetric kernels is too inaccurate and reports too high
       // of a bandwidth. For now just always use symmetric if available.
@@ -693,8 +677,6 @@ static ncclResult_t scheduleCollTasksToPlan(
         NCCLCHECK(calcCollChunking(comm, task, /*nChannels=*/1, globalBytesPerElement*countMid, &chunkSize, &directFlags, &proxyOpMid));
         devWork->cbd.chunkGrainsMid = chunkSize/grainSize;
       }
-
-      INFO(NCCL_NET, "chunk size %ld", chunkSize);
       devWork->direct = directFlags;
 
       // Update the current channel and vacant traffic budget.
@@ -759,10 +741,7 @@ static ncclResult_t scheduleCollTasksToPlan(
     plan->threadPerBlock = std::max(plan->threadPerBlock, task->nWarps*WARP_SIZE);
     if (!plan->kernelSpecialized) {
       plan->kernelFn = ncclDevKernelForFunc[task->devFuncId];
-      // plan->kernelFn = (void*) (0ULL + task->devFuncId);
       plan->kernelSpecialized = ncclDevKernelForFuncIsSpecialized[task->devFuncId];
-      // plan->kernelSpecialized = (void*) ((1ULL << 32) + task->devFuncId);
-      INFO(NCCL_TUNING, "Kernel %p, specialized %d, devFuncId=%d", plan->kernelFn, plan->kernelSpecialized, task->devFuncId);
     }
 
     if (comm->rank == 0) {
@@ -771,14 +750,14 @@ static ncclResult_t scheduleCollTasksToPlan(
         ncclProtoToString(task->protocol), devWork->channelLo, devWork->channelHi);
 
       if (task->isCollnet) {
-        INFO(NCCL_COLL, "Collective %s(%s, %s, %s, %s) count=%ld devFuncId=%d channel{Lo..Hi}={%d..%d} count=%ld chunkCount=%d",
+        TRACE(NCCL_COLL, "Collective %s(%s, %s, %s, %s) count=%ld devFuncId=%d channel{Lo..Hi}={%d..%d} count=%ld chunkCount=%d",
           ncclFuncToString(task->func), ncclDevRedOpToString(task->opDev.op),
           ncclDatatypeToString(task->datatype), ncclAlgoToString(task->algorithm),
           ncclProtoToString(task->protocol),
           (long)task->count, task->devFuncId, devWork->channelLo, devWork->channelHi,
           (long)devWork->collnet.count, devWork->collnet.chunkCount);
       } else {
-        INFO(NCCL_COLL, "Collective %s(%s, %s, %s, %s) count=%ld devFuncId=%d channel{Lo..Hi}={%d..%d} count{Lo,Mid,Hi}={%ld,%ld,%ld} chunkBytes{Lo,Mid,Hi}={%d,%d,%d}",
+        TRACE(NCCL_COLL, "Collective %s(%s, %s, %s, %s) count=%ld devFuncId=%d channel{Lo..Hi}={%d..%d} count{Lo,Mid,Hi}={%ld,%ld,%ld} chunkBytes{Lo,Mid,Hi}={%d,%d,%d}",
           ncclFuncToString(task->func), ncclDevRedOpToString(task->opDev.op),
           ncclDatatypeToString(task->datatype), ncclAlgoToString(task->algorithm),
           ncclProtoToString(task->protocol),
@@ -834,16 +813,8 @@ static ncclResult_t addP2pToPlan(
       struct ncclChannelPeer** channelPeers = comm->channels[channelId].peers;
       for (int dir=0; dir <= 1; dir++) {
         int peerRank = dir ? sendRank : recvRank;
-        struct ncclChannelPeer* peer = channelPeers[peerRank];
-        if (peer == nullptr) {
-          WARN("P2P channel %d dir %d peer %d has no connector (channelPeers[%d] == NULL)", channelId, dir, peerRank, peerRank);
-          continue;
-        }
-        struct ncclConnector* conn = dir ? &peer->send[connIndex]
-                                         : &peer->recv[connIndex];
-        INFO(NCCL_P2P, "P2P connector check: channel %d dir %d peer %d conn %p buffSimple %p buffLL %p flags 0x%x transport %p",
-             channelId, dir, peerRank, conn, conn->conn.buffs[NCCL_PROTO_SIMPLE],
-             conn->conn.buffs[NCCL_PROTO_LL], conn->conn.flags, conn->transportComm);
+        struct ncclConnector* conn = dir ? &channelPeers[peerRank]->send[connIndex]
+                                         : &channelPeers[peerRank]->recv[connIndex];
         protoLL[dir] &= conn->conn.buffs[NCCL_PROTO_LL] != nullptr;
         network[dir] |= conn->transportComm == (dir ? &netTransport.send : &netTransport.recv);
         proxySameProcess[dir] &= conn->proxyConn.sameProcess;
@@ -965,13 +936,6 @@ static ncclResult_t addP2pToPlan(
   work->recvBytes = recvBytes==-1 ? 0 : recvBytes;
   work->profilerEnabled = ncclProfilerPluginLoaded() && ((p2pTasks[0] ? p2pTasks[0] : p2pTasks[1])->eActivationMask & ncclProfileKernelCh);
 
-  INFO(NCCL_P2P, "addP2pToPlan round %d sendRank %d recvRank %d sendAddr %p recvAddr %p sendBytes %zi recvBytes %zi sendChannels %d recvChannels %d sendProto %s recvProto %s sendNetReg %d recvNetReg %d sendIpcReg %d recvIpcReg %d, network %s",
-      p2pRound, sendRank, recvRank, sendAddr, recvAddr, work->sendBytes, work->recvBytes,
-      work->nSendChannels, work->nRecvChannels,
-      work->sendProtoLL ? "LL" : "Simple", work->recvProtoLL ? "LL" : "Simple",
-      work->sendNetReg, work->recvNetReg, work->sendIpcReg, work->recvIpcReg,
-      network[0] || network[1] ? "(network)" : "(intra-node)");
-
   struct ncclProxyOp proxyOps[2] = {};
   int nProxyOps = selfSend ? 0 : 2;
   for (int dir=0; dir < nProxyOps; dir++) {
@@ -1070,10 +1034,7 @@ static ncclResult_t scheduleP2pTasksToPlan(
   plan->threadPerBlock = std::max(plan->threadPerBlock, NCCL_MAX_NTHREADS);
   if (!plan->kernelSpecialized) {
     plan->kernelFn = ncclDevKernelForFunc[ncclDevFuncId_P2p()];
-    // plan->kernelFn = (void*)(0ULL+ncclDevFuncId_P2p());
-    INFO(NCCL_INIT, "Using specialized kernel for P2P %p", plan->kernelFn);
     plan->kernelSpecialized = ncclDevKernelForFuncIsSpecialized[ncclDevFuncId_P2p()];
-    // plan->kernelSpecialized =(void*)((1ULL << 32) + ncclDevFuncId_P2p());
   }
 
   // Compute how much to split operations
@@ -1174,7 +1135,6 @@ static ncclResult_t uploadWork(struct ncclComm* comm, struct ncclKernelPlan* pla
   void* fifoBufHost;
   uint32_t fifoCursor, fifoMask;
 
-
   switch (plan->workStorageType) {
   case ncclDevWorkStorageTypeArgs:
     plan->kernelArgs->workBuf = nullptr;
@@ -1213,7 +1173,6 @@ static ncclResult_t uploadWork(struct ncclComm* comm, struct ncclKernelPlan* pla
   struct ncclDevWorkBatch* batchZero = (struct ncclDevWorkBatch*)(plan->kernelArgs+1);
   for (int b=0; b < plan->nWorkBatches; b++) {
     batchZero[b].offsetBase += fifoCursor;
-    INFO(NCCL_INIT, "batchZero (%d) (%p) offsetbase %d", b, &batchZero[b], batchZero[b].offsetBase);
   }
 
   // Write the channel-shared work structs.
@@ -1239,12 +1198,12 @@ static ncclResult_t uploadWork(struct ncclComm* comm, struct ncclKernelPlan* pla
     if (comm->workFifoBufGdrHandle != nullptr) wc_store_fence();
     break;
   case ncclDevWorkStorageTypePersistent:
-    { 
+    { ncclResult_t result = ncclSuccess;
       fprintf(stderr, "DONT SUPPORT: NCCL INFO Uploading %ld bytes of persistent work buffer\n", (long)workBytes);
       fflush(stderr);
       exit(1);
-      ncclResult_t result = ncclSuccess;
       struct uploadWork_cleanup_t* cleanup = nullptr;
+
       cudaStreamCaptureMode mode = cudaStreamCaptureModeRelaxed;
       void* fifoBufDev = nullptr;
       cudaStream_t deviceStream;
@@ -1260,7 +1219,6 @@ static ncclResult_t uploadWork(struct ncclComm* comm, struct ncclKernelPlan* pla
       plan->kernelArgs->workBuf = fifoBufDev;
 
       // coverity[uninit_use_in_call:FALSE] => fifoBufHost is never NULL
-      INFO(NCCL_INIT, "Uploading %ld bytes of work to persistent buffer %p using memcpyasync", (long)workBytes, fifoBufDev);
       CUDACHECKGOTO(cudaMemcpyAsync(fifoBufDev, fifoBufHost, workBytes, cudaMemcpyDefault, deviceStream), result, fail);
       cudaEvent_t memcpyDone;
       CUDACHECKGOTO(cudaEventCreateWithFlags(&memcpyDone, cudaEventDisableTiming), result, fail);
@@ -1284,8 +1242,6 @@ static ncclResult_t uploadWork(struct ncclComm* comm, struct ncclKernelPlan* pla
     } break;
   default: break;
   }
-
-
   return ncclSuccess;
 }
 
@@ -1462,9 +1418,7 @@ ncclResult_t ncclLaunchPrepare(struct ncclComm* comm) {
 
         struct ncclTaskColl* task = ncclIntruQueueHead(&planner->collTaskQueue);
         plan->isSymColl = true;
-        // plan->kernelFn = (void*) ((2ULL << 32) + (uint32_t)ncclSymGetKernelPtr((ncclSymKernelId)task->devFuncId, task->opDev.op, task->datatype));
         plan->kernelFn = ncclSymGetKernelPtr((ncclSymKernelId)task->devFuncId, task->opDev.op, task->datatype);
-        INFO(NCCL_TUNING, "ncclSymGetKernelPtr: devFuncId %d, op %d, datatype %d -> kernel %p", task->devFuncId, task->opDev.op, task->datatype, plan->kernelFn);
         plan->threadPerBlock = task->nWarps*WARP_SIZE;
         plan->channelMask = uint64_t(-1) >> (64-task->nMaxChannels);
 
@@ -1518,8 +1472,6 @@ ncclResult_t ncclLaunchPrepare(struct ncclComm* comm) {
 
     // userStream[0] waits on each userStream[i]...
     for (struct ncclCudaStreamList* l=planner->streams->next; l != nullptr; l = l->next) {
-      fprintf(stderr, "NCCL INFO ncclLaunchPrepare: userStream[0] waiting on userStream %p\n",  l->stream);
-      fflush(stderr);
       CUDACHECKGOTO(cudaEventRecord(comm->sharedRes->scratchEvent, l->stream), result, failure);
       CUDACHECKGOTO(cudaStreamWaitEvent(launchStream, comm->sharedRes->scratchEvent, 0), result, failure);
     }
@@ -1577,9 +1529,6 @@ ncclResult_t ncclLaunchKernelBefore_NoUncapturedCuda(struct ncclComm* comm, stru
   // This code is called after we've checked in to the intra-process barrier
   // but before launching the kernel. We are not allowed to call CUDA unless the
   // kernel launch is captured.
-
-  INFO(NCCL_INIT, "called ncclLaunchKernelBefore_NoUncapturedCuda");
-  
   NCCLCHECK(uploadWork(comm, plan));
   return ncclSuccess;
 }
@@ -1608,19 +1557,15 @@ ncclResult_t ncclLaunchKernel(struct ncclComm* comm, struct ncclKernelPlan* plan
 
   int driverVersion;
   NCCLCHECKGOTO(ncclCudaDriverVersion(&driverVersion), ret, do_return);
-  INFO(NCCL_TUNING, "In ncclLaunchKernel, driverVersion %d, CUDART_VERSION %d", driverVersion, CUDART_VERSION);
 
   CUfunction fn;
-  // CUDACHECKGOTO(cudaGetFuncBySymbol(&fn, sym), ret, do_return);
   fn = (CUfunction)sym;
-  INFO(NCCL_TUNING, "Launching kernel %p (sym %p) with grid %dx%d block %dx%d smem %d stream %p",
-       fn, sym, grid.x, grid.y, block.x, block.y, smem, launchStream);
+  //CUDACHECKGOTO(cudaGetFuncBySymbol(&fn, sym), ret, do_return);
 
   if (CUDART_VERSION >= 11080 && driverVersion >= 11080) {
   #if CUDART_VERSION >= 11080
     int compCap = comm->compCap;
     unsigned int clusterSize = (compCap >= 90) ? comm->config.cgaClusterSize : 0;
-    INFO(NCCL_TUNING, "compCap %d; ", compCap);
 
     CUlaunchConfig launchConfig = {0};
     CUlaunchAttribute launchAttrs[6] = {};
@@ -1683,10 +1628,7 @@ ncclResult_t ncclLaunchKernel(struct ncclComm* comm, struct ncclKernelPlan* plan
     launchConfig.attrs = launchAttrs;
     launchConfig.numAttrs = attrs;
     launchConfig.hStream = launchStream;
-    INFO(NCCL_TUNING, "Launching kernel %p, launchConfig grid %dx%d block %dx%d smem %d stream %p, extra[0] %p, extra[1] %p",
-         fn, launchConfig.gridDimX, launchConfig.gridDimY, launchConfig.blockDimX, launchConfig.blockDimY, launchConfig.sharedMemBytes, launchStream, extra[0], extra[1]);
     CUCHECKGOTO(cuLaunchKernelEx(&launchConfig, fn, nullptr, extra), ret, do_return);
-    INFO(NCCL_TUNING, "After cuLaunchKernelEx");
   #endif
   } else {
     // Standard kernel launch
@@ -1732,8 +1674,6 @@ ncclResult_t ncclLaunchFinish(struct ncclComm* comm) {
     cudaStream_t launchStream = planner->streams->stream; // First user stream gets launch
     cudaStream_t deviceStream, launchOrder;
     cudaEvent_t finishedEvent = comm->sharedRes->scratchEvent;
-    fprintf(stderr, "NCCL INFO ncclLaunchFinish: recording finishedEvent %p on launchStream %p\n", finishedEvent, launchStream);
-    fflush(stderr);
     CUDACHECK(cudaEventRecord(finishedEvent, launchStream));
 
     if (comm->workFifoProduced - comm->workFifoProducedLastRecorded > comm->workFifoBytes/8) {
@@ -1894,7 +1834,7 @@ static ncclResult_t topoGetAlgoInfo(
     return (algoEnv || protoEnv) ? ncclInvalidUsage : ncclInternalError;
   }
   if (simInfo) simInfo->estimatedTime = time;
-  INFO(NCCL_COLL, "%ld Bytes -> Algo %d proto %d time %f", nBytes, info->algorithm, info->protocol, time);
+  TRACE(NCCL_COLL, "%ld Bytes -> Algo %d proto %d time %f", nBytes, info->algorithm, info->protocol, time);
 
   int nc = comm->nChannels;
   int nt = comm->maxThreads[info->algorithm][info->protocol];

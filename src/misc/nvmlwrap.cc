@@ -135,9 +135,9 @@ ncclResult_t ncclNvmlEnsureInitialized() {
     initResult = ncclInternalError;
     return initResult;
   }
-  INFO(NCCL_INIT, "nvmlDeviceGetCount%s() returned %d devices, ncclNvmlMaxDevices %d", have_v2 ? "_v2" : "", ncclNvmlDeviceCount, ncclNvmlMaxDevices);
+ // INFO(NCCL_INIT, "nvmlDeviceGetCount%s() returned %d devices, ncclNvmlMaxDevices %d", have_v2 ? "_v2" : "", ncclNvmlDeviceCount, ncclNvmlMaxDevices);
   for(int a=0; a < ncclNvmlDeviceCount; a++) {
-    INFO(NCCL_INIT, "nvmlDeviceGetHandleByIndex(%d)", a);
+    //INFO(NCCL_INIT, "nvmlDeviceGetHandleByIndex(%d)", a);
     res1 = pfn_nvmlDeviceGetHandleByIndex(a, &ncclNvmlDevices[a].handle);
     if (res1 != NVML_SUCCESS) {
       WARN("nvmlDeviceGetHandleByIndex(%d) failed: %s", int(a), pfn_nvmlErrorString(res1));

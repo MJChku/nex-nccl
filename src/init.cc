@@ -190,15 +190,11 @@ static ncclResult_t commFree(ncclComm_t comm) {
    * free all intra-process communicators; therefore, we only need to focus on local
    * resource cleanup in commFree(). */
   if (comm->proxyState && comm->proxyRefCountOld == 0 && comm->proxyState->thread) {
-    
-    INFO(NCCL_INIT, "comm %p rank %d - joining proxy thread", comm, comm->rank);
     PTHREADCHECK(pthread_join(comm->proxyState->thread, nullptr), "pthread_join");
-    INFO(NCCL_INIT, "proxy thread join done 1");
     if (comm->proxyState->threadUDS) {
       // UDS support
       PTHREADCHECK(pthread_join(comm->proxyState->threadUDS, nullptr), "pthread_join");
     }
-    INFO(NCCL_INIT, "proxy thread join done 2");
   }
 
   if (comm->memPool) CUDACHECK(cudaMemPoolDestroy(comm->memPool));
@@ -300,7 +296,7 @@ static ncclResult_t dmaBufSupported(struct ncclComm* comm) {
   CUdevice dev;
   int cudaDriverVersion;
   CUDACHECK(cudaDriverGetVersion(&cudaDriverVersion));
-  if (cudaDriverVersion < 11070) return ncclInternalError;
+  if ( cudaDriverVersion < 11070) return ncclInternalError;
   CUCHECK(cuDeviceGet(&dev, comm->cudaDev));
   // Query device to see if DMA-BUF support is available
   (void) cuDeviceGetAttribute(&flag, CU_DEVICE_ATTRIBUTE_DMA_BUF_SUPPORTED, dev);
@@ -365,17 +361,11 @@ static ncclResult_t commAlloc(struct ncclComm* comm, struct ncclComm* parent, in
   nvmlDevice_t nvmlDev;
   char busId[NVML_DEVICE_PCI_BUS_ID_BUFFER_SIZE];
   NCCLCHECK(int64ToBusId(comm->busId, busId));
-  INFO(NCCL_INIT, "After int64ToBusId in commAlloc: busId %s ", busId);
   NCCLCHECK(ncclNvmlDeviceGetHandleByPciBusId(busId, &nvmlDev));
   NCCLCHECK(ncclNvmlDeviceGetIndex(nvmlDev, (unsigned int*)&comm->nvmlDev));
 
-  // comm->compCap = ncclCudaCompCap();
-  INFO(NCCL_INIT,"comm %p rank %d nranks %d cudaDev %d busId %lx compCap %d", comm, rank, ndev, comm->cudaDev, comm->busId, comm->compCap);
-
-  // static const int gpuBusIds[4] = { 0x13000, 0x19000, 0x48000, 0x4d000 };
-  // comm->cudaDev = rank;
-  // comm->busId = gpuBusIds[rank]; // This is a hack to avoid calling cudaGetDevice() and nvmlDeviceGetHandleByPciBusId() in the init path.
-  comm->compCap = -1; // Will be set from Xml
+  comm->compCap = -1; //ncclCudaCompCap();
+  TRACE(NCCL_INIT,"comm %p rank %d nranks %d cudaDev %d busId %lx compCap %d", comm, rank, ndev, comm->cudaDev, comm->busId, comm->compCap);
 
   comm->checkPointers = ncclParamCheckPointers() == 1 ? true : false;
   comm->dmaBufSupport = (dmaBufSupported(comm) == ncclSuccess) ? true : false;
@@ -396,7 +386,6 @@ static ncclResult_t commAlloc(struct ncclComm* comm, struct ncclComm* parent, in
   NCCLCHECK(ncclCalloc(&comm->connectRecv, comm->nRanks));
 
   // Mark channels as non initialized.
-  INFO(NCCL_INIT, "comm %p, marking %d channels as uninitialized", comm, MAXCHANNELS);
   for (int c=0; c < MAXCHANNELS; c++) comm->channels[c].id = -1;
 
   if (parent == NULL || !parent->shareResources) {
@@ -609,7 +598,7 @@ static ncclResult_t fillInfo(struct ncclComm* comm, struct ncclPeerInfo* info, u
 }
 
 static ncclResult_t setupChannel(struct ncclComm* comm, int channelId, int rank, int nranks, int* ringRanks) {
-  INFO(NCCL_INIT, "setupChannel: comm %p, channelId %d, rank %d nranks %d", comm, channelId, rank, nranks);
+  TRACE(NCCL_INIT, "rank %d nranks %d", rank, nranks);
   NCCLCHECK(initChannel(comm, channelId));
 
   struct ncclRing* ring = &comm->channels[channelId].ring;
@@ -793,7 +782,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
     // Buffer Registration is not supported with MNNVL
     if (comm->MNNVL) comm->nvlsRegSupport = 0;
 
-    INFO(NCCL_INIT,"pidHash[%d] %lx intraProcRank %d intraProcRanks %d intraProcRank0 %d",
+    TRACE(NCCL_INIT,"pidHash[%d] %lx intraProcRank %d intraProcRanks %d intraProcRank0 %d",
         rank, comm->peerInfo[rank].pidHash, intraProcRank, intraProcRanks, intraProcRank0);
     if (intraProcRank == -1 || intraProcRank0 == -1 || comm->peerInfo[intraProcRank0].comm == NULL) {
       WARN("Failed to determine intra proc ranks rank %d hostHash %lx pidHash %lx intraProcRank %d intraProcRanks %d intraProcRank0 %d",
@@ -996,7 +985,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
   comm->localRank = comm->rankToLocalRank[rank];
   comm->localRanks = comm->nodeRanks[comm->node].localRanks;
 
-  INFO(NCCL_INIT,"hostHash[%d] %lx localRank %d localRanks %d localRank0 %d",
+  TRACE(NCCL_INIT,"hostHash[%d] %lx localRank %d localRanks %d localRank0 %d",
         rank, comm->peerInfo[rank].hostHash, comm->localRank, comm->localRanks, comm->localRankToRank[0]);
   if (comm->localRank == -1 || comm->localRankToRank[0] == -1 || comm->localRanks == 0) {
     WARN("Failed to determine local ranks rank %d hostHash %lx pidHash %lx localRank %d localRanks %d localRank0 %d",
@@ -1051,7 +1040,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
   // AllGather3 - end
   timers[TIMER_INIT_ALLGATHER] += clockNano() - timers[TIMER_INIT_CONNECT];
 
-  INFO(NCCL_INIT, "rank %d nranks %d - BUILT %d TREES/RINGS", rank, nranks, comm->nChannels);
+  TRACE(NCCL_INIT, "rank %d nranks %d - BUILT %d TREES/RINGS", rank, nranks, comm->nChannels);
 
   char line[1024];
   line[0]='\0';
@@ -1235,12 +1224,12 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
     }
   }
 
-  INFO(NCCL_INIT, "rank %d nranks %d - CONNECTED %d RINGS AND TREES", rank, nranks, comm->nChannels);
+  TRACE(NCCL_INIT, "rank %d nranks %d - CONNECTED %d RINGS AND TREES", rank, nranks, comm->nChannels);
 
   // Compute time models for algorithm and protocol combinations
   NCCLCHECKGOTO(ncclTopoTuneModel(comm, comm->minCompCap, comm->maxCompCap, graphs), ret, fail);
 
-  INFO(NCCL_INIT, "%d collnet channels, %d nvls channels, %d p2p channels, %d p2p channels per peer", comm->nChannels, comm->nvlsChannels, comm->p2pnChannels, comm->p2pnChannelsPerPeer);
+  INFO(NCCL_INIT, "%d coll channels, %d collnet channels, %d nvls channels, %d p2p channels, %d p2p channels per peer", comm->nChannels, comm->nChannels, comm->nvlsChannels, comm->p2pnChannels, comm->p2pnChannelsPerPeer);
 
   if (comm->intraRank == 0) { // Load ncclParamLaunchMode
     const char* str = ncclGetEnv("NCCL_LAUNCH_MODE");
@@ -1271,7 +1260,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
 
   // We should have allocated all buffers, collective fifos, ... we can
   // restore the affinity.
-  INFO(NCCL_INIT, "rank %d nranks %d - DONE", rank, nranks);
+  TRACE(NCCL_INIT, "rank %d nranks %d - DONE", rank, nranks);
 
 exit:
   if (CPU_COUNT(&comm->cpuAffinity)) sched_setaffinity(0, sizeof(cpu_set_t), &affinitySave);
@@ -1413,7 +1402,7 @@ static ncclResult_t ncclCommInitRankFunc(struct ncclAsyncJob* job_) {
   // Set the maximum kernel stack size of all kernels to avoid
   // a CUDA memory reconfig on load (c.f. NVSHMEM issue)
   if (maxLocalSizeBytes > 0 && ncclParamSetStackSize() == 1) {
-    INFO(NCCL_INIT, "Setting cudaLimitStackSize to %zu", maxLocalSizeBytes);
+    TRACE(NCCL_INIT, "Setting cudaLimitStackSize to %zu", maxLocalSizeBytes);
     CUDACHECKIGNORE(cudaDeviceSetLimit(cudaLimitStackSize, maxLocalSizeBytes));
   }
   timers[TIMER_INIT_KERNELS] = clockNano() - timers[TIMER_INIT_KERNELS];
@@ -1422,8 +1411,6 @@ static ncclResult_t ncclCommInitRankFunc(struct ncclAsyncJob* job_) {
     NCCLCHECKGOTO(ncclCalloc(&parentRanks, job->parent->nRanks), res, fail);
     if (job->excludeRanksCount) {
       NCCLCHECKGOTO(getParentRanks(job->parent->nRanks, job->parent->rank, job->excludeRanksList, job->excludeRanksCount, &job->nranks, &job->myrank, parentRanks), res, fail);
-      INFO(NCCL_INIT, "job->parent %p rank %d nranks %d myrank %d excludeRanksCount %d excludeRanksList %p parentRanks %p- Shrink START",
-           job->parent, job->parent->rank, job->nranks, job->myrank, job->excludeRanksCount, job->excludeRanksList, parentRanks);
     } else {
       NCCLCHECKGOTO(commGetSplitInfo(comm, job->parent, job->color, job->key, &job->nranks, &job->myrank, parentRanks), res, fail);
       // Negative color does not create a new comm object. We needed to take part in the allgather, but we're done now.
@@ -1790,7 +1777,7 @@ static ncclResult_t ncclCommInitRankDev(ncclComm_t* newcomm, int nranks, int nId
     pthread_once(&once, showVersion);
   }
   // Make sure the CUDA runtime is initialized.
-  // CUDACHECKGOTO(cudaFree(NULL), res, fail);
+  CUDACHECKGOTO(cudaFree(NULL), res, fail);
 
   NCCLCHECKGOTO(PtrCheck(newcomm, "CommInitRank", "newcomm"), res, fail);
   NCCLCHECKGOTO(PtrCheck(config, "CommInitRank", "config"), res, fail);
@@ -1855,7 +1842,6 @@ fail:
 NCCL_API(ncclResult_t, ncclCommInitRank, ncclComm_t* newcomm, int nranks, ncclUniqueId commId, int myrank);
 ncclResult_t ncclCommInitRank(ncclComm_t* newcomm, int nranks, ncclUniqueId commId, int myrank) {
   NVTX3_RANGE(NcclNvtxParamsCommInitRank)
-  INFO(NCCL_INIT, "Check this: ncclCommInitRank newcomm %p nranks %d commId 0x%llx myrank %d", newcomm, nranks, getHash(commId.internal, NCCL_UNIQUE_ID_BYTES), myrank);
   // Load the CUDA driver and dlsym hooks (can fail on old drivers)
   (void)ncclCudaLibraryInit();
 
@@ -1885,7 +1871,6 @@ ncclResult_t ncclCommInitAll(ncclComm_t* comms, int ndev, const int* devlist) {
   (void)ncclCudaLibraryInit();
 
   CUDACHECK(cudaGetDevice(&oldDev));
-  INFO(NCCL_INIT, "cudaGetDevice %d", oldDev);
   NCCLCHECKGOTO(PtrCheck(comms, "CommInitAll", "comms"), ret, fail);
   if (ndev < 0) {
     WARN("Invalid device count requested : %d", ndev);
@@ -1894,7 +1879,6 @@ ncclResult_t ncclCommInitAll(ncclComm_t* comms, int ndev, const int* devlist) {
   }
 
   CUDACHECKGOTO(cudaGetDeviceCount(&totalnDev), ret, fail);
-  INFO(NCCL_INIT, "cudaGetDeviceCount %d", totalnDev);
   if (devlist) {
     NCCLCHECKGOTO(ncclCalloc(&gpuFlags, totalnDev), ret, fail);
     for (int i = 0; i < ndev; ++i) {
@@ -2027,7 +2011,7 @@ static ncclResult_t commDestroySync(struct ncclAsyncJob* job_) {
 
   CUDACHECKGOTO(cudaSetDevice(comm->cudaDev), ret, fail);
 
-  INFO(NCCL_INIT, "Destroying comm %p rank %d abortFlag %d asyncResult %d", comm, comm->rank, *comm->abortFlag, comm->asyncResult);
+  TRACE(NCCL_INIT, "Destroying comm %p rank %d abortFlag %d asyncResult %d", comm, comm->rank, *comm->abortFlag, comm->asyncResult);
 
   if (comm->initState == ncclSuccess) {
     if ((ret = ncclStrongStreamSynchronize(&comm->sharedRes->hostStream)) != ncclSuccess) {
@@ -2146,8 +2130,6 @@ static ncclResult_t commReclaim(struct ncclAsyncJob* job_) {
         }
       }
 
-      INFO(NCCL_INIT, "commReclaim: all %d ranks in intraComm0 %p finalized, free local resources", intraRanks, intracomm0);
-
       /* free local resources. */
       nextIntraComm = intracomm0;
       while (nextIntraComm) {
@@ -2164,7 +2146,6 @@ static ncclResult_t commReclaim(struct ncclAsyncJob* job_) {
     }
   }
 
-  INFO(NCCL_INIT, "commReclaim SUCCESS");
   return ncclSuccess;
 }
 
@@ -2182,7 +2163,7 @@ ncclResult_t ncclCommDestroy(ncclComm_t comm) {
   NVTX3_FUNC_WITH_PARAMS(CommDestroy, NcclNvtxParamsCommInitRank,
     NVTX3_PAYLOAD(comm->commHash, nranks, rank, cudaDev));
 
-  INFO(NCCL_INIT, "comm %p rank %d nRanks %d cudaDev %d busId %lx", comm, rank, nranks, cudaDev, comm->busId);
+  TRACE(NCCL_INIT, "comm %p rank %d nRanks %d cudaDev %d busId %lx", comm, rank, nranks, cudaDev, comm->busId);
   // Try and prevent a double free of the comm struct (user error)
   if (comm->rank == -1 || comm->nRanks == -1 || comm->cudaDev == -1 || comm->busId == -1) {
     WARN("comm %p has already been destroyed", comm);
@@ -2235,7 +2216,7 @@ ncclResult_t ncclCommAbort(ncclComm_t comm) {
   NVTX3_RANGE_ADD_PAYLOAD(CommAbort, NcclNvtxParamsCommInitRankSchema,
     NVTX3_PAYLOAD(comm->commHash, nranks, rank, cudaDev));
 
-  INFO(NCCL_INIT, "comm %p rank %d nRanks %d cudaDev %d busId %lx", comm, rank, nranks, cudaDev, comm->busId);
+  TRACE(NCCL_INIT, "comm %p rank %d nRanks %d cudaDev %d busId %lx", comm, rank, nranks, cudaDev, comm->busId);
 
   NCCLCHECKGOTO(ncclCalloc(&job, 1), res, fail);
   job->comm = comm;

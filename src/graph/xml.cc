@@ -999,7 +999,7 @@ ncclResult_t ncclTopoTrimXmlRec(struct ncclXmlNode* node, int* keep) {
       const char* busid;
       NCCLCHECK(xmlGetAttr(node, "name", &name));
       NCCLCHECK(xmlGetAttr(node, "busid", &busid));
-      INFO(NCCL_GRAPH, "Removing node %s %s %s\n", node->name, name, busid);
+      TRACE(NCCL_GRAPH, "Removing node %s %s %s\n", node->name, name, busid);
 #endif
       NCCLCHECK(xmlRemoveNode(node));
     }

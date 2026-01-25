@@ -50,7 +50,6 @@ ncclResult_t getBusId(int cudaDev, int64_t *busId) {
   // higher.
   char busIdStr[] = "00000000:00:00.0";
   CUDACHECK(cudaDeviceGetPCIBusId(busIdStr, sizeof(busIdStr), cudaDev));
-  printf("getBusId: cudaDev %d busIdStr %s\n", cudaDev, busIdStr);
   NCCLCHECK(busIdToInt64(busIdStr, busId));
   return ncclSuccess;
 }
@@ -75,47 +74,6 @@ static uint64_t hostHashValue = 0;
  *
  * This string can be overridden by using the NCCL_HOSTID env var.
  */
-// #define HOSTID_FILE "/proc/sys/kernel/random/boot_id"
-// static void getHostHashOnce() {
-//   char hostHash[1024];
-//   const char *hostId;
-
-//   // Fall back is the full hostname if something fails
-//   (void) getHostName(hostHash, sizeof(hostHash), '\0');
-//   int offset = strlen(hostHash);
-
-//   if ((hostId = ncclGetEnv("NCCL_HOSTID")) != NULL) {
-//     INFO(NCCL_ENV, "NCCL_HOSTID set by environment to %s", hostId);
-//     strncpy(hostHash, hostId, sizeof(hostHash)-1);
-//     hostHash[sizeof(hostHash)-1] = '\0';
-//   } else {
-//     FILE *file = fopen(HOSTID_FILE, "r");
-//     if (file != NULL) {
-//       char *p;
-//       if (fscanf(file, "%ms", &p) == 1) {
-//         strncpy(hostHash+offset, p, sizeof(hostHash)-offset-1);
-//         free(p);
-//       }
-//       fclose(file);
-//     }
-//   }
-
-//   // Make sure the string is terminated
-//   hostHash[sizeof(hostHash)-1]='\0';
-
-//   INFO(NCCL_INIT,"unique hostname '%s'", hostHash);
-
-//   // [NEX] no hash
-//   hostHashValue = getHash(hostHash, strlen(hostHash));
-
-//   int nex_id = 0;
-//   const char* nex_id_str = getenv("NEX_ID");
-//   if (nex_id_str) nex_id = atoi(nex_id_str);
-//   hostHashValue += nex_id;
-
-//   INFO(NCCL_INIT,"unique host hash %lx", hostHashValue);
-// }
-
 #define HOSTID_FILE "/proc/sys/kernel/random/boot_id"
 static void getHostHashOnce() {
   char hostHash[1024];
@@ -148,7 +106,6 @@ static void getHostHashOnce() {
 
   hostHashValue = getHash(hostHash, strlen(hostHash));
 }
-
 uint64_t getHostHash(void) {
   static pthread_once_t once = PTHREAD_ONCE_INIT;
   pthread_once(&once, getHostHashOnce);
@@ -170,7 +127,7 @@ uint64_t getPidHash(void) {
   if (len < 0) len = 0;
 
   pname[plen+len]='\0';
-  INFO(NCCL_INIT,"unique PID '%s'", pname);
+  TRACE(NCCL_INIT,"unique PID '%s'", pname);
 
   return getHash(pname, strlen(pname));
 }
