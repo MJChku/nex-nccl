@@ -26,6 +26,8 @@
 extern void __syncthreads();
 extern void __syncwarp();
 extern void __all_sync(unsigned mask, int* predicate);
+extern void global_memcpy(void* dst, const void* src, size_t size);
+// extern void shared_memcpy(void* dst, const void* src, size_t size);
 
 /* Funnel-shift helper (PTX’s __funnelshift_r replacement) */
 static inline uint32_t __funnelshift_r(uint32_t lo, uint32_t hi, int shift)
@@ -164,21 +166,31 @@ template<int Size>
 inline __device__  BytePack<Size> ld_global(uintptr_t addr)
 {
   BytePack<Size> v;
-  std::memcpy(&v, reinterpret_cast<void*>(addr), Size);
+  // std::memcpy(&v, reinterpret_cast<void*>(addr), Size);
+  global_memcpy(&v, reinterpret_cast<void*>(addr), Size);
   return v;
 }
+
 template<int Size>
 inline __device__  __attribute__((no_sanitize("undefined"))) void st_global(uintptr_t addr,
                                                  BytePack<Size> value)
 {
-  if (Size > 0) std::memcpy(reinterpret_cast<void*>(addr), &value, Size);
+  if (Size > 0) global_memcpy(reinterpret_cast<void*>(addr), &value, Size);
 }
 
 /* Shared‐space versions just forward to the same implementation          */
 template<int Size> inline __device__ 
-BytePack<Size> ld_shared(uint32_t addr)        { return ld_global<Size>(addr); }
+BytePack<Size> ld_shared(uint32_t addr) { 
+  // return ld_global<Size>(addr); 
+  BytePack<Size> v;
+  std::memcpy(&v, reinterpret_cast<void*>(addr), Size);
+  return v;
+}
+
 template<int Size> inline __device__ 
-void            st_shared(uint32_t addr, BytePack<Size> v) { st_global<Size>(addr, v); }
+void st_shared(uint32_t addr, BytePack<Size> v) { 
+  if (Size > 0) std::memcpy(reinterpret_cast<void*>(addr), &v, Size);
+}
 
 /* Volatile / relaxed variants map to the same thing on host builds       */
 template<int Size> inline __device__ 
