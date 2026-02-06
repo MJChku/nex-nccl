@@ -115,12 +115,12 @@ using Scalar = T;
   RedFn redFn(redArg);
   uintptr_t minSrcs[MinSrcs + !MinSrcs];
   uintptr_t minDsts[MinDsts + !MinDsts];
-  #pragma unroll
+  // #pragma unroll
   for (int s=0; s < MinSrcs; s++) {
     minSrcs[s] = cvta_to_global(srcPtrFn(s)) + threadBytesBehind;
   }
 
-  #pragma unroll
+  // #pragma unroll
   for (int d=0; d < MinDsts; d++) {
     // Yes, for some template arguments this code will be unreachable.  That's fine.
     // coverity[dead_error_line]

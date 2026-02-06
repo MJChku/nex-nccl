@@ -26,7 +26,7 @@
 extern void __syncthreads();
 extern void __syncwarp();
 extern void __all_sync(unsigned mask, int* predicate);
-extern void global_memcpy(void* dst, const void* src, size_t size);
+extern void global_memcpy(void* dst, const void* src, size_t size, int pos);
 // extern void shared_memcpy(void* dst, const void* src, size_t size);
 
 /* Funnel-shift helper (PTX’s __funnelshift_r replacement) */
@@ -167,7 +167,7 @@ inline __device__  BytePack<Size> ld_global(uintptr_t addr)
 {
   BytePack<Size> v;
   // std::memcpy(&v, reinterpret_cast<void*>(addr), Size);
-  global_memcpy(&v, reinterpret_cast<void*>(addr), Size);
+  global_memcpy(&v, reinterpret_cast<void*>(addr), Size, 1);
   return v;
 }
 
@@ -175,7 +175,7 @@ template<int Size>
 inline __device__  __attribute__((no_sanitize("undefined"))) void st_global(uintptr_t addr,
                                                  BytePack<Size> value)
 {
-  if (Size > 0) global_memcpy(reinterpret_cast<void*>(addr), &value, Size);
+  if (Size > 0) global_memcpy(reinterpret_cast<void*>(addr), &value, Size, 0);
 }
 
 /* Shared‐space versions just forward to the same implementation          */

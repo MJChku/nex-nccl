@@ -141,7 +141,10 @@ struct PrimitivesWithoutDirect {
 
 __device__ inline int checkAbort(int &abortCache, const int abortValue, int &spins) {
   if (abortCache & abortValue) return 1;
-  if (++spins < NCCL_SPINS_BEFORE_CHECK_ABORT) return 0;
+  if (++spins < NCCL_SPINS_BEFORE_CHECK_ABORT){
+    coop_thread_yield(spins);
+    return 0;
+  } 
   spins = 0;
   int abort = *ncclShmem->comm.abortFlag;
   if (abort) {
@@ -149,7 +152,6 @@ __device__ inline int checkAbort(int &abortCache, const int abortValue, int &spi
     abortCache |= abortValue;
   }
 
-  coop_thread_yield();
   return abort;
 }
 
