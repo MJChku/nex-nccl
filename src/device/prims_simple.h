@@ -120,6 +120,7 @@ class Primitives<
         // syncwall();
         //if (spins == 0) printf("r=%d b=%d t=%d SPUN OUT got=%d want=%d\n", ncclShmem->comm.rank, blockIdx.x, threadIdx.x, int(connStepCache + (isSendNotRecv ? NCCL_STEPS : 0)), int(step+StepPerSlice));
       }
+      nex_revive();
     }
 
 
@@ -344,6 +345,7 @@ public:
       int abort = 0;
       if (checkAbort(abort, 1, spins)) break;
     }
+    nex_revive();
   }
 
   template<int Recv, int Send, typename Fn>
@@ -359,6 +361,7 @@ public:
             connStepCache = loadStepValue(connStepPtr);
             if (checkAbort(flags, Aborted, spins)) break;
           }
+          nex_revive();
           void **ptrs = isSendNotRecv ? ncclShmem->groups[group].dsts
                                       : ncclShmem->groups[group].srcs;
           if ((flags & ConnFifoEnabled) && connFifo[step%NCCL_STEPS].mode == NCCL_MODE_OFFSET) {
@@ -733,6 +736,7 @@ private:
       while (*ptr != -1) {
         if (checkAbort(flags, Aborted, spins)) break;
       }
+      nex_revive();
     }
 
     if (flags & NetDeviceUnpack) {
@@ -753,6 +757,7 @@ private:
       while (*tail > *head) {
         if (checkAbort(flags, Aborted, spins)) break;
       }
+      nex_revive();
     }
   }
 
@@ -778,6 +783,7 @@ private:
           T* exchgPtr;
           directBuff = (T*)outputBuf;
           while (*slot != nullptr && !checkAbort(flags, Aborted, spins));
+          nex_revive();
           if (P2p) {
             exchgPtr = (T*)outputBuf;
           } else {
@@ -796,6 +802,7 @@ private:
           ptr = *slot;
           if (ptr != nullptr || checkAbort(flags, Aborted, spins)) break;
         }
+        nex_revive();
 
         if (slot) {
           directBuff = reinterpret_cast<T*>(ptr);
@@ -814,6 +821,7 @@ private:
         if (slot && argSlot0 && argSlot1) {
           T* exchgPtr;
           while ((*slot != nullptr || *argSlot0 != 0 || *argSlot1 != 0) && !checkAbort(flags, Aborted, spins));
+          nex_revive();
           // If there is no recv, then we are directly pulling from input buffer (e.g. directScatter)
           // Otherwise, we are pulling from output buffer (e.g. recvCopyDirectSend)
           directBuff = MaxRecv == 0 ? (T*)inputBuf : (T*)outputBuf;
@@ -845,6 +853,7 @@ private:
           ptr = *slot;
           if (ptr != nullptr || checkAbort(flags, Aborted, spins)) break;
         }
+        nex_revive();
 
         if (slot && argSlot0 && argSlot1) {
           directBuff = reinterpret_cast<T*>(ptr);
@@ -856,6 +865,7 @@ private:
               arg1 = *argSlot1;
               if ((arg0 != 0 && arg1 != 0) || checkAbort(flags, Aborted, spins)) break;
             }
+            nex_revive();
             ncclShmem->redOpArgs[1 + index] = ((arg1 & 0xffffffff) << 32) | (arg0 & 0xffffffff);
           }
           *argSlot0 = 0; *argSlot1 = 0;
@@ -1007,6 +1017,7 @@ private:
         if (checkAbort(flags, Aborted, spins)) break;
         // syncwall();
       }
+      nex_revive();
     }
     if (send && (flags & RoleWaitSend)) {
       int spins = 0;
@@ -1015,6 +1026,7 @@ private:
         if (checkAbort(flags, Aborted, spins)) break;
         // syncwall();
       }
+      nex_revive();
       ncclShmem->groups[group].dsts[0] = ((T*)peer->buff) + ((step+ps->stepOffset)%NCCL_STEPS)*peer->connStepSize + ps->sendOffset;
       if (peer->accSize < ps->sendOffset + nelem + (step+ps->stepOffset)*peer->connStepSize) {
         // New data, add our own data to it.
@@ -1105,6 +1117,7 @@ private:
         if (checkAbort(flags, Aborted, spins)) break;
         // syncwall();
       }
+      nex_revive();
       if (peer->accSize < ps->recvOffset + nelem + (step+ps->stepOffset)*peer->connStepSize) {
         // New data, copy to our output buffer.
         ncclShmem->groups[group].dsts[1] = userOutput + ps->outIx;
@@ -1119,6 +1132,7 @@ private:
         if (checkAbort(flags, Aborted, spins)) break;
         // syncwall();
       }
+      nex_revive();
       ncclShmem->groups[group].dsts[0] = ((T*)peer->buff) + (step%NCCL_STEPS)*peer->connStepSize + ps->sendOffset;
     }
     long long int localAccSize = shmem->localAccSize;

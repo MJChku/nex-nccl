@@ -61,6 +61,7 @@ class Primitives<T, RedOp, Fan, Direct, ProtoLL, P2p, isNetOffload>:
         sendConnHeadCache = *sendConnHeadPtr;
         if (checkAbort(abort, 1, spins)) break;
       }
+      nex_revive();
       if (sendConnFifo) {
     
         // LOG(LOG_DEBUG, "waitSend  sendConnFifo ptr (%p) %p; headptr %p, head %d", sendConnFifo, &sendConnFifo[sendConnHead%NCCL_STEPS], sendConnHeadPtr, sendConnHead);
@@ -105,6 +106,7 @@ class Primitives<T, RedOp, Fan, Direct, ProtoLL, P2p, isNetOffload>:
       }
       if (checkAbort(abort, 1, spins)) break;
     } while ((flag1 != flag) || (flag2 != flag));
+    nex_revive();
     uint64_t val64 = data1 + (((uint64_t)data2) << 32);
     return val64;
   }
@@ -137,6 +139,7 @@ class Primitives<T, RedOp, Fan, Direct, ProtoLL, P2p, isNetOffload>:
       line[i].flag2 = p[3];
       if (checkAbort(abort, 1, spins)) break;
     }
+    nex_revive();
     uint64_t val64 = line[i].data1 + (((uint64_t)line[i].data2) << 32);
     return val64;
   }

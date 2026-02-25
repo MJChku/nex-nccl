@@ -69,6 +69,7 @@ extern void __threadfence();
 // extern void syncwall();
 // extern void explicit_yield();
 extern void coop_thread_yield(int spins);
+extern void nex_revive();
 
 inline void __trap(){assert(0);};
 inline int __popc(uint x){return __builtin_popcount(x);}

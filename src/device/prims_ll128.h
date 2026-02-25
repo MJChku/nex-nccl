@@ -62,6 +62,7 @@ class Primitives<T, RedOp, Fan, Direct, ProtoLL128, P2p, isNetOffload>:
         sendConnHeadCache = *sendConnHeadPtr;
         if (checkAbort(abort, 1, spins)) break;
       }
+      nex_revive();
       if (sendConnFifo) {
         sendConnFifo[sendStep[wid]%NCCL_STEPS].size = nbytes;
       }
@@ -194,6 +195,7 @@ class Primitives<T, RedOp, Fan, Direct, ProtoLL128, P2p, isNetOffload>:
         }
         needReload &= (0 == checkAbort(abort, 1, spins));
       } while (__any_sync(WARP_MASK, needReload));
+      nex_revive();
 
       #pragma unroll
       for (int u=0; u<ELEMS_PER_THREAD; u+=2)
@@ -241,6 +243,7 @@ class Primitives<T, RedOp, Fan, Direct, ProtoLL128, P2p, isNetOffload>:
           }
           needReload &= (0 == checkAbort(abort, 1, spins));
         } while (__any_sync(WARP_MASK, needReload));
+        nex_revive();
 
         #pragma unroll
         for (int u=0; u<ELEMS_PER_THREAD; u+=2)
